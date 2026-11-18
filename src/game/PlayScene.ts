@@ -137,6 +137,11 @@ export class PlayScene extends Phaser.Scene {
   private isFullRun = true;
   private lastRoomIndex = 0;
   private runStartX = 0;
+  private jumpBuffer = 0;
+  private crawlBuffer = 0;
+  private jumpHintDone = false;
+  private crawlHintDone = false;
+  private verbHintText!: Phaser.GameObjects.Text;
   private winBreakdown = { obstacles: 0, flame: 0, time: 0 };
   private newBest = false;
   private crawling = false;
@@ -246,6 +251,17 @@ export class PlayScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(22)
       .setShadow(0, 4, "#000000", 10, true, true);
+    this.verbHintText = this.add
+      .text(0, 0, "", {
+        fontFamily: FONT,
+        fontSize: "28px",
+        color: C.text,
+        align: "center",
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(21)
+      .setShadow(0, 4, "#000000", 10, true, true)
+      .setAlpha(0);
     this.bannerText = this.add
       .text(GAME_W * 0.5, 300, "", {
         fontFamily: FONT,
@@ -366,7 +382,11 @@ export class PlayScene extends Phaser.Scene {
         pointer.event?.preventDefault?.();
         this.uiBlockPointer = true;
         btn.held = true;
-        if (btn.id === "jump") this.tryJumpOrVault();
+        if (btn.id === "jump") {
+          this.jumpBuffer = 0.2;
+          this.tryJumpOrVault();
+        }
+        if (btn.id === "crawl") this.crawlBuffer = 0.2;
         if (this.mode === "title" || this.mode === "won") this.beginRun();
         this.paintTouchBtn(btn);
       });
@@ -445,7 +465,11 @@ export class PlayScene extends Phaser.Scene {
       this.keysHeld.add(event.code);
       if (JUMP_KEYS.has(event.code)) {
         event.preventDefault();
+        this.jumpBuffer = 0.2;
         this.tryJumpOrVault();
+      }
+      if (CRAWL_KEYS.has(event.code)) {
+        this.crawlBuffer = 0.2;
       }
       if (
         CUP_KEYS.has(event.code) ||
@@ -487,7 +511,7 @@ export class PlayScene extends Phaser.Scene {
 
   private wantsCrawl(): boolean {
     if (this.vaulting || this.playerAir > 2) return false;
-    if (this.touchHeld("crawl")) return true;
+    if (this.touchHeld("crawl") || this.crawlBuffer > 0) return true;
     for (const code of this.keysHeld) {
       if (CRAWL_KEYS.has(code)) return true;
     }
@@ -558,6 +582,8 @@ export class PlayScene extends Phaser.Scene {
     this.vaulting = false;
     this.vaultT = 0;
     this.vaultObsId = null;
+    this.jumpBuffer = 0;
+    this.crawlBuffer = 0;
     this.doorTimers = {};
     this.elapsed = 0;
     this.score = 0;
@@ -603,6 +629,7 @@ export class PlayScene extends Phaser.Scene {
     if (this.mode !== "playing") return;
     if (this.vaulting || this.crawling) return;
     if (this.playerAir > 4) return;
+    this.jumpBuffer = 0;
     const vault = this.findVaultInRange();
     if (vault) {
       this.startVault(vault.room, vault.obs);
@@ -646,6 +673,8 @@ export class PlayScene extends Phaser.Scene {
     this.scoredObstacles.add(id);
     this.obstaclePoints += points;
     this.score += points;
+    if (id.includes(":vault:")) this.jumpHintDone = true;
+    if (id.includes(":crawl:")) this.crawlHintDone = true;
   }
 
   private moveAndCollide(dt: number, held: boolean): void {
@@ -669,6 +698,20 @@ export class PlayScene extends Phaser.Scene {
       return;
     }
 
+    // Land (or stay grounded) before reading Jump / Crawl so a press on the
+    // landing frame is not eaten by leftover air.
+    if (this.playerAir > 0 || this.playerVy > 0) {
+      this.playerVy -= GRAVITY * dt;
+      this.playerAir += this.playerVy * dt;
+      if (this.playerAir <= 0) {
+        this.playerAir = 0;
+        this.playerVy = 0;
+      }
+    }
+    this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
+    this.crawlBuffer = Math.max(0, this.crawlBuffer - dt);
+    if (this.jumpBuffer > 0) this.tryJumpOrVault();
+
     this.crawling = this.wantsCrawl();
     this.sprinting = !this.crawling && this.wantsSprint();
 
@@ -679,16 +722,6 @@ export class PlayScene extends Phaser.Scene {
 
     const speed = WALK_SPEED * speedMul;
     let nextX = this.playerX + speed * dt;
-
-    // Vertical: jump arc
-    if (this.playerAir > 0 || this.playerVy > 0) {
-      this.playerVy -= GRAVITY * dt;
-      this.playerAir += this.playerVy * dt;
-      if (this.playerAir <= 0) {
-        this.playerAir = 0;
-        this.playerVy = 0;
-      }
-    }
 
     nextX = this.resolveBlockers(this.playerX, nextX);
     this.playerX = Math.min(this.house.width - EXIT_MARGIN + 8, nextX);
@@ -904,6 +937,7 @@ export class PlayScene extends Phaser.Scene {
     this.drawVignette();
     this.drawHud();
     this.refreshCopy(timeSec);
+    this.updateVerbHint();
   }
 
   private failRun(reason: FailReason = "flame"): void {
@@ -1094,11 +1128,22 @@ export class PlayScene extends Phaser.Scene {
     if (room.kind === "hall") {
       for (const [wx, phase] of [
         [170, 0.2],
-        [490, 0.8],
-        [810, 1.5],
+        [290, 0.8],
+        [830, 1.5],
       ] as const) {
         this.drawCurtain(g, x + wx - 8, 166, 56, 230, timeSec, 0.85, phase);
         this.drawCurtain(g, x + wx + 102, 166, 56, 230, timeSec, 0.85, phase + 0.7);
+      }
+    }
+    if (room.kind === "longHall") {
+      // Billow only on the draft-corridor windows, never on the crawl or door.
+      for (const [wx, phase] of [
+        [1520, 0.2],
+        [1880, 0.9],
+        [2220, 1.5],
+      ] as const) {
+        this.drawCurtain(g, x + wx - 8, 166, 56, 230, timeSec, 0.9, phase);
+        this.drawCurtain(g, x + wx + 102, 166, 56, 230, timeSec, 0.9, phase + 0.7);
       }
     }
     if (room.kind === "frontDoor") {
@@ -1117,14 +1162,14 @@ export class PlayScene extends Phaser.Scene {
         room.hazards[0]?.kind === "periodic" ? periodicActive(room.hazards[0], timeSec) : 0.4;
       for (const [wx, phase] of [
         [144, 0],
-        [484, 0.6],
-        [824, 1.2],
+        [304, 0.6],
+        [864, 1.2],
       ] as const) {
         this.drawCurtain(g, x + wx, 146, 80, 300, timeSec, 0.7 + pulse * 0.8, phase);
         this.drawCurtain(g, x + wx + 120, 146, 80, 300, timeSec, 0.7 + pulse * 0.8, phase + 0.5);
       }
     }
-    if (room.kind === "kitchen") {
+    {
       for (const obs of room.obstacles ?? []) {
         if (obs.kind !== "closingDoor") continue;
         const open = this.doorOpenAmount(room, obs);
@@ -1549,6 +1594,37 @@ export class PlayScene extends Phaser.Scene {
     return `${m}:${r.toString().padStart(2, "0")}`;
   }
 
+  private updateVerbHint(): void {
+    const hint = this.verbHintText;
+    if (this.mode !== "playing") {
+      hint.setAlpha(0);
+      return;
+    }
+    let msg = "";
+    for (const room of this.house.rooms) {
+      for (const obs of room.obstacles ?? []) {
+        const left = room.worldX + obs.x;
+        if (!this.jumpHintDone && obs.kind === "vault") {
+          if (this.playerX >= left - 160 && this.playerX < left + obs.w * 0.3) {
+            msg = "Jump";
+          }
+        }
+        if (!this.crawlHintDone && obs.kind === "crawl") {
+          if (this.playerX >= left - 160 && this.playerX < left + 24) {
+            msg = "Hold Crawl";
+          }
+        }
+      }
+    }
+    if (!msg) {
+      hint.setAlpha(0);
+      return;
+    }
+    hint.setText(msg);
+    hint.setPosition(this.playerX + 18, this.chestY() - 56);
+    hint.setAlpha(1);
+  }
+
   private refreshCopy(timeSec: number): void {
     if (this.mode === "title") {
       this.titleText.setAlpha(1);
@@ -1566,6 +1642,7 @@ export class PlayScene extends Phaser.Scene {
       return;
     }
     this.titleBestText.setAlpha(0);
+    this.hintText.setAlpha(0);
     const room = roomAt(this.house.rooms, this.playerX);
     this.roomText.setText(room.name);
     this.attemptText.setText(this.attempts > 1 ? `Attempt ${this.attempts}` : "");

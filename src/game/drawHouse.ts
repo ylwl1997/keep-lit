@@ -9,6 +9,7 @@ function wallTone(kind: RoomKind): { top: number; mid: number; lower: number } {
     case "foyer":
       return { top: 0x1c1410, mid: 0x241a14, lower: 0x2a1c14 };
     case "hall":
+    case "longHall":
       return { top: 0x161210, mid: 0x1c1614, lower: 0x241a16 };
     case "frontDoor":
       return { top: 0x16120f, mid: 0x1e1612, lower: 0x261c16 };
@@ -185,7 +186,8 @@ function furnitureFoyer(g: G, r: BakedRoom): void {
 function furnitureHall(g: G, r: BakedRoom): void {
   const x = r.worldX;
   drawRug(g, x + 80, FLOOR_Y - 10, r.width - 160, 44, 0x3a1c1c);
-  const windows = [180, 500, 820];
+  // Keep windows off the crawl span (x 470–670) so drapes cannot sit on the beam.
+  const windows = [180, 300, 840];
   for (const wx of windows) {
     drawWindow(g, x + wx, 170, 150, 230);
     g.fillStyle(C.woodDark, 1);
@@ -197,6 +199,44 @@ function furnitureHall(g: G, r: BakedRoom): void {
     g.fillRect(x + sx, 260, 8, 28);
     g.fillCircle(x + sx + 4, 254, 10);
   }
+}
+
+function furnitureLongHall(g: G, r: BakedRoom): void {
+  const x = r.worldX;
+  // Short rugs in the calm stretches only — never across the gap, crawl mouth, or door.
+  const rugs: Array<[number, number]> = [
+    [80, 400],
+    [700, 380],
+    [1280, 180],
+    [2360, 200],
+    [2820, 620],
+    [3620, 480],
+  ];
+  for (const [rx, rw] of rugs) {
+    drawRug(g, x + rx, FLOOR_Y - 10, rw, 44, 0x3a1c1c);
+  }
+
+  // Windows stay off vault 520–660, gap 1120–1242, crawl 2580–2780, door 3480–3576.
+  const windows = [200, 820, 1520, 1880, 2220, 2960, 3800];
+  for (const wx of windows) {
+    drawWindow(g, x + wx, 170, 150, 230);
+    g.fillStyle(C.woodDark, 1);
+    g.fillRect(x + wx - 10, 158, 170, 7);
+  }
+
+  // Unlit sconces between beats, not on obstacle silhouettes.
+  for (const sx of [400, 980, 1400, 2460, 3200, 4000]) {
+    g.fillStyle(C.metal, 1);
+    g.fillRect(x + sx, 260, 8, 28);
+    g.fillCircle(x + sx + 4, 254, 10);
+  }
+
+  // Side-wall set dressing, well clear of the walk-line gates.
+  drawTable(g, x + 70, FLOOR_Y - 68, 100, 68, 14);
+  g.fillStyle(C.woodDark, 1);
+  g.fillRect(x + 880, FLOOR_Y - 54, 44, 54);
+  g.fillStyle(C.wood, 1);
+  g.fillRect(x + 884, FLOOR_Y - 50, 36, 16);
 }
 
 function furnitureFrontDoor(g: G, r: BakedRoom): void {
@@ -250,7 +290,8 @@ function furnitureFan(g: G, r: BakedRoom): void {
 
 function furnitureCurtains(g: G, r: BakedRoom): void {
   const x = r.worldX;
-  const windows = [160, 500, 840];
+  // Mid window was on the crawl span (x 520–730); keep drapes off the beam.
+  const windows = [160, 320, 880];
   for (const wx of windows) {
     drawWindow(g, x + wx, 150, 200, 270, 0x14101c, 0x201828);
     g.fillStyle(C.woodDark, 1);
@@ -488,26 +529,88 @@ function drawCrawlBeam(g: G, worldX: number, obs: Extract<Obstacle, { kind: "cra
   const x = worldX + obs.x;
   const clear = obs.clearance;
   const w = obs.w;
-  // Heavy beam / half-closed shutter hanging low — solid above, lit mouth below.
+  const mouthTop = FLOOR_Y - clear;
+  const jambW = 28;
+  const lintelH = 40;
+  const mouthL = x + jambW;
+  const mouthW = w - jambW * 2;
+
+  // Passage through: recessed back wall and floorboards continuing under the lintel.
+  // Must read as an empty hole, never a bench seat or cabinet plinth.
+  g.fillStyle(0x120e0c, 1);
+  g.fillRect(mouthL, mouthTop, mouthW, clear);
+  g.fillStyle(0x0a0806, 1);
+  g.fillRect(mouthL + 10, mouthTop + 6, mouthW - 20, clear - 18);
+  // Floor running through the mouth
+  g.fillStyle(C.floor, 1);
+  g.fillRect(mouthL, FLOOR_Y - 2, mouthW, 12);
   g.fillStyle(C.woodDeep, 1);
-  g.fillRect(x - 14, CEILING_Y, w + 28, 22);
+  g.fillRect(mouthL, FLOOR_Y, mouthW, 6);
+  g.lineStyle(1, 0x000000, 0.25);
+  const boards = Math.max(3, Math.floor(mouthW / 36));
+  for (let i = 1; i < boards; i++) {
+    const bx = mouthL + (mouthW * i) / boards;
+    g.lineBetween(bx, FLOOR_Y, bx, FLOOR_Y + 12);
+  }
+  // Recessed inner jambs — a short tunnel, not a piece of furniture.
+  g.fillStyle(0x1a120e, 1);
+  g.beginPath();
+  g.moveTo(mouthL, mouthTop);
+  g.lineTo(mouthL + 12, mouthTop + 8);
+  g.lineTo(mouthL + 12, FLOOR_Y - 2);
+  g.lineTo(mouthL, FLOOR_Y);
+  g.closePath();
+  g.fillPath();
+  g.beginPath();
+  g.moveTo(mouthL + mouthW, mouthTop);
+  g.lineTo(mouthL + mouthW - 12, mouthTop + 8);
+  g.lineTo(mouthL + mouthW - 12, FLOOR_Y - 2);
+  g.lineTo(mouthL + mouthW, FLOOR_Y);
+  g.closePath();
+  g.fillPath();
+
+  // Soffit from the ceiling down to the lintel: vertical boarding, not horizontal bench slats.
+  g.fillStyle(C.woodDeep, 1);
+  g.fillRect(x - 6, CEILING_Y, w + 12, mouthTop - CEILING_Y);
   g.fillStyle(C.wood, 1);
-  g.fillRect(x, CEILING_Y + 16, w, FLOOR_Y - clear - (CEILING_Y + 16));
-  // Bottom lip of the beam (reads as the clearance edge)
+  g.fillRect(x, CEILING_Y + 8, w, mouthTop - CEILING_Y - 8);
+  const plank = 22;
+  g.lineStyle(2, C.woodDark, 0.55);
+  for (let px = x + 8; px < x + w - 6; px += plank) {
+    g.lineBetween(px, CEILING_Y + 10, px, mouthTop - lintelH);
+  }
+  g.fillStyle(C.woodDark, 0.35);
+  g.fillRect(x + 4, CEILING_Y + 8, 6, mouthTop - lintelH - CEILING_Y - 8);
+  g.fillRect(x + w - 10, CEILING_Y + 8, 6, mouthTop - lintelH - CEILING_Y - 8);
+
+  // Heavy lintel — the timber you have to duck under.
+  g.fillStyle(C.woodDeep, 1);
+  g.fillRect(x - 10, mouthTop - lintelH, w + 20, lintelH);
+  g.fillStyle(C.woodMid, 1);
+  g.fillRect(x - 6, mouthTop - lintelH + 5, w + 12, lintelH - 10);
+  // End grain / thickness on the lintel ends
   g.fillStyle(C.woodDark, 1);
-  g.fillRect(x - 4, FLOOR_Y - clear - 16, w + 8, 16);
-  g.fillStyle(C.trimLite, 0.95);
-  g.fillRect(x - 2, FLOOR_Y - clear - 6, w + 4, 6);
-  g.fillStyle(C.trim, 0.9);
-  g.fillRect(x + 10, CEILING_Y + 30, 10, FLOOR_Y - clear - CEILING_Y - 54);
-  g.fillRect(x + w - 20, CEILING_Y + 30, 10, FLOOR_Y - clear - CEILING_Y - 54);
-  // Crawl mouth: darker recess with a warm lip so the opening is obvious
-  g.fillStyle(0x060402, 0.72);
-  g.fillRect(x + 4, FLOOR_Y - clear, w - 8, clear);
-  g.fillStyle(0xe8d4a8, 0.16);
-  g.fillRect(x + 10, FLOOR_Y - clear + 2, w - 20, 12);
-  g.fillStyle(0x000000, 0.35);
-  g.fillRect(x + 16, FLOOR_Y - clear + 18, w - 32, clear - 22);
+  g.fillRect(x - 10, mouthTop - lintelH, 12, lintelH);
+  g.fillRect(x + w - 2, mouthTop - lintelH, 12, lintelH);
+  g.fillStyle(0xc8a06a, 0.2);
+  g.fillRect(x - 7, mouthTop - lintelH + 8, 6, lintelH - 16);
+  g.fillRect(x + w - 1, mouthTop - lintelH + 8, 6, lintelH - 16);
+  // Lit underside of the lintel — the crawl edge.
+  g.fillStyle(C.trimLite, 1);
+  g.fillRect(mouthL - 2, mouthTop - 6, mouthW + 4, 6);
+  g.fillStyle(0xe8d4a8, 0.28);
+  g.fillRect(mouthL, mouthTop, mouthW, 4);
+
+  // Architectural jambs framing the rectangle, flush with the soffit, not bench legs.
+  g.fillStyle(C.woodDeep, 1);
+  g.fillRect(x - 4, mouthTop - 8, jambW, clear + 12);
+  g.fillRect(x + w - jambW + 4, mouthTop - 8, jambW, clear + 12);
+  g.fillStyle(C.wood, 1);
+  g.fillRect(x, mouthTop - 4, jambW - 8, clear + 6);
+  g.fillRect(x + w - jambW + 8, mouthTop - 4, jambW - 8, clear + 6);
+  g.fillStyle(C.woodDark, 1);
+  g.fillRect(x + jambW - 8, mouthTop, 6, clear);
+  g.fillRect(x + w - jambW + 2, mouthTop, 6, clear);
 }
 
 function drawFloorGap(g: G, worldX: number, obs: Extract<Obstacle, { kind: "gap" }>): void {
@@ -596,7 +699,7 @@ function drawObstacles(g: G, room: BakedRoom): void {
   for (const obs of list) {
     switch (obs.kind) {
       case "vault":
-        if (room.kind === "foyer" || room.kind === "cross") drawVaultChest(g, room.worldX, obs);
+        if (room.kind === "foyer" || room.kind === "cross" || room.kind === "longHall") drawVaultChest(g, room.worldX, obs);
         else if (room.kind === "storm") drawVaultCabinet(g, room.worldX, obs);
         else drawVaultSofa(g, room.worldX, obs);
         break;
@@ -622,6 +725,9 @@ function drawFurniture(g: G, room: BakedRoom): void {
       break;
     case "hall":
       furnitureHall(g, room);
+      break;
+    case "longHall":
+      furnitureLongHall(g, room);
       break;
     case "frontDoor":
       furnitureFrontDoor(g, room);

@@ -21,7 +21,7 @@ export const FLAME_MAX = 100;
 export const RECOVER_RATE = 26;
 export const CALM_THRESHOLD = 0.06;
 /** Fail banner hold so score under it is readable. */
-export const FAIL_BEAT = 1.05;
+export const FAIL_BEAT = 2.0;
 /** Scoring reference only — not a fail line. */
 export const SCORE_TIME_REF = 90;
 export const BEST_SCORE_KEY = "keep-lit-best-score";
