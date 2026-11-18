@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#140f0a" />
+    <title>Keep Lit</title>
+    <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+    <script>
+      (function () {
+        function show(msg) {
+          var el = document.getElementById("boot-status") || document.getElementById("boot-error");
+          if (!el) return;
+          el.id = "boot-error";
+          el.textContent = msg;
+        }
+        window.addEventListener("error", function (event) {
+          show((event && event.message) || "The game failed to start.");
+        });
+        window.addEventListener("unhandledrejection", function (event) {
+          show(String((event && event.reason) || "The game failed to start."));
+        });
+      })();
+    </script>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #140f0a;
+        overflow: hidden;
+      }
+      #game {
+        width: 100%;
+        height: 100%;
+        position: relative;
+      }
+      #boot-status, #boot-error {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        text-align: center;
+        font-family: Georgia, "Palatino Linotype", Palatino, serif;
+        font-size: 18px;
+        line-height: 1.4;
+        color: #c9b48a;
+        background: #140f0a;
+        z-index: 10;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game">
+      <div id="boot-status">Loading Keep Lit…</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
