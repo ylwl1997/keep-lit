@@ -2,7 +2,7 @@
 
 Cup a candle and walk a dark house. Hold to shield the flame; jump, vault, crawl, or run when the house demands it. Release in calm air so the flame can recover.
 
-This is a 12-room vertical slice. Procedural placeholder art, no audio yet.
+A 12-room stylized real-time 3D vertical slice (Three.js, side-view with slight perspective). Procedural placeholder art, no audio yet.
 
 ## Play
 
@@ -15,7 +15,7 @@ Flame-out, falling into a gap, or a slammed door restarts in place (“The flame
 
 ## Score
 
-HUD shows **Score**, **Best**, the flame bar, and **elapsed** time (count-up, `M:SS`).
+HUD shows **Score**, **Best**, the flame lantern, and **elapsed** time (count-up, `M:SS`).
 
 - Obstacle clears (once each): gap jump **+200**, vault **+150**, crawl **+150**, closing door **+250**
 - Leave a room with flame ≥ 80: **+50**

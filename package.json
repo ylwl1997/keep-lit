@@ -10,9 +10,10 @@
     "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
-    "phaser": "^3.87.0"
+    "three": "^0.181.2"
   },
   "devDependencies": {
+    "@types/three": "^0.181.0",
     "typescript": "~5.9.3",
     "vite": "^7.1.12",
     "wrangler": "^4.163.0"

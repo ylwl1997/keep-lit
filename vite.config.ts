@@ -8,7 +8,7 @@ export default defineConfig({
   base: "./",
   resolve: {
     alias: {
-      phaser: resolve(root, "node_modules/phaser"),
+      three: resolve(root, "node_modules/three"),
     },
   },
   server: {

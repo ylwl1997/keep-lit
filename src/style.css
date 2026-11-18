@@ -1,0 +1,485 @@
+html,
+body,
+#game {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #140f0a;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+}
+
+#game {
+  position: relative;
+}
+
+#stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1280px;
+  height: 800px;
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+  overflow: hidden;
+  background: #140f0a;
+}
+
+#view {
+  display: block;
+  width: 1280px;
+  height: 800px;
+  background: #12100e;
+}
+
+#boot-status,
+#boot-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  font-family: Fraunces, "EB Garamond", "Source Serif 4", Georgia, "Palatino Linotype", Palatino, "Times New Roman", serif;
+  font-size: 18px;
+  line-height: 1.4;
+  color: #c9b48a;
+  background: #140f0a;
+  z-index: 20;
+}
+
+#boot-error {
+  color: #f4e6c5;
+  white-space: pre-wrap;
+  pointer-events: auto;
+}
+
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  font-family: Fraunces, "EB Garamond", "Source Serif 4", "Source Serif Pro", Georgia, "Palatino Linotype", Palatino, "Times New Roman", serif;
+  color: #f4e6c5;
+}
+
+/* —— Thick lintel HUD —— */
+#lintel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 118px;
+  pointer-events: none;
+  z-index: 6;
+}
+
+#lintel .lintel-body {
+  height: 102px;
+  padding: 16px 36px 10px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  background:
+    linear-gradient(180deg, #6e4a2e 0%, #5a3a24 28%, #3a2618 72%, #2a1810 100%);
+  box-shadow:
+    inset 0 3px 0 rgba(196, 137, 74, 0.18),
+    inset 0 -10px 16px rgba(0, 0, 0, 0.35);
+  border-bottom: 3px solid #8a5a32;
+}
+
+#lintel .lintel-edge {
+  height: 14px;
+  background:
+    linear-gradient(180deg, #2a1810 0%, #1c100a 55%, #4a2c16 55%, #3a2414 100%);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.55);
+}
+
+.hud-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+}
+
+.hud-col.left {
+  align-items: flex-start;
+}
+
+.hud-col.right {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.hud-col.center {
+  align-items: center;
+  min-width: 260px;
+}
+
+#room-name {
+  font-family: Fraunces, Georgia, serif;
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 1.1;
+  color: #f4e6c5;
+  font-variation-settings: "SOFT" 10, "WONK" 0, "opsz" 36;
+}
+
+#score-line,
+#best-line,
+#elapsed,
+#attempt-line {
+  font-family: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+#score-line {
+  margin-top: 6px;
+  font-size: 19px;
+  color: #f4e6c5;
+}
+
+#best-line {
+  font-size: 19px;
+  color: #ffd27a;
+}
+
+#attempt-line {
+  margin-top: 4px;
+  font-size: 15px;
+  color: #c4b090;
+}
+
+#elapsed {
+  margin-top: 6px;
+  font-size: 18px;
+  color: #f4e6c5;
+}
+
+/* Copper-framed glass lantern */
+#lantern {
+  position: relative;
+  width: 248px;
+  height: 32px;
+  margin-top: 8px;
+  border: 3px solid #b06a38;
+  border-radius: 3px 3px 8px 8px;
+  background: linear-gradient(180deg, #1a120c 0%, #0a0808 100%);
+  box-shadow:
+    0 3px 0 #4a2c16,
+    inset 0 0 10px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 210, 122, 0.22);
+  overflow: hidden;
+}
+
+#lantern::before,
+#lantern::after {
+  content: "";
+  position: absolute;
+  top: -5px;
+  width: 14px;
+  height: 8px;
+  background: #8a5a32;
+  border-radius: 2px 2px 0 0;
+  z-index: 2;
+}
+
+#lantern::before { left: 10px; }
+#lantern::after { right: 10px; }
+
+#lantern-glass {
+  position: absolute;
+  inset: 3px;
+  border-radius: 1px 1px 4px 4px;
+  overflow: hidden;
+  background: #0a0808;
+}
+
+#flame-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #e06018 0%, #ff9a3c 45%, #ffd27a 100%);
+  box-shadow: inset 0 4px 0 rgba(255, 246, 216, 0.35);
+}
+
+#lantern-shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 246, 216, 0.18) 0%, transparent 45%);
+  pointer-events: none;
+}
+
+/* —— Copper-rim wooden plaques —— */
+#buttons {
+  position: absolute;
+  left: 28px;
+  right: 28px;
+  bottom: 22px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  pointer-events: none;
+  z-index: 7;
+}
+
+#buttons .right-btns {
+  display: flex;
+  gap: 16px;
+}
+
+.plaque {
+  appearance: none;
+  pointer-events: auto;
+  position: relative;
+  height: 92px;
+  margin: 0;
+  padding: 0 12px 6px;
+  border: 3px solid #b06a38;
+  border-radius: 5px;
+  background:
+    linear-gradient(180deg, #6e4a2e 0%, #3a2416 48%, #2a1c14 100%);
+  box-shadow:
+    0 8px 0 #2a1810,
+    0 11px 0 #8a5a32,
+    inset 0 2px 0 rgba(196, 137, 74, 0.4),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.4);
+  color: #f4e6c5;
+  font-family: "Cormorant SC", Fraunces, Georgia, "Palatino Linotype", Palatino, serif;
+  font-weight: 600;
+  font-size: 21px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#btn-cup {
+  width: 188px;
+}
+
+#btn-jump,
+#btn-crawl,
+#btn-run {
+  width: 132px;
+}
+
+.plaque.pressed {
+  transform: translateY(5px);
+  box-shadow:
+    0 2px 0 #2a1810,
+    0 4px 0 #c4894a,
+    inset 0 6px 10px rgba(0, 0, 0, 0.5),
+    inset 0 0 10px rgba(255, 176, 96, 0.35);
+  border-color: #c4894a;
+}
+
+.plaque.held {
+  box-shadow:
+    0 8px 0 #2a1810,
+    0 11px 0 #c4894a,
+    inset 0 0 24px rgba(255, 176, 96, 0.88),
+    inset 0 0 8px #ffb060,
+    inset 0 2px 0 rgba(255, 210, 122, 0.5);
+  border-color: #c4894a;
+  background:
+    linear-gradient(180deg, #8a6240 0%, #5a3a24 48%, #3a2416 100%);
+}
+
+.plaque.disabled {
+  border-color: #5a3a24;
+  color: #7a6a52;
+  box-shadow:
+    0 6px 0 #1c100a,
+    0 8px 0 #4a2c16,
+    inset 0 2px 0 rgba(74, 44, 22, 0.3);
+  background: linear-gradient(180deg, #4a3220 0%, #2a1c14 100%);
+  cursor: default;
+}
+
+/* —— Title / fail / win typography —— */
+#overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  z-index: 8;
+}
+
+#title-screen,
+#fail-screen,
+#win-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+#title-screen {
+  padding-top: 118px;
+}
+
+#title-wordmark {
+  margin: 28px 0 0;
+  line-height: 0.92;
+  font-size: 114px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variation-settings: "SOFT" 18, "WONK" 0, "opsz" 144;
+}
+
+#title-wordmark .keep {
+  font-style: normal;
+  color: #f4e6c5;
+}
+
+#title-wordmark .lit {
+  font-style: italic;
+  font-weight: 600;
+  color: #ffd27a;
+  letter-spacing: -0.02em;
+  margin-left: 0.08em;
+}
+
+#title-rule {
+  width: 280px;
+  height: 2px;
+  margin-top: 10px;
+  background: linear-gradient(90deg, transparent, #8a5a32 18%, #c4894a 50%, #8a5a32 82%, transparent);
+}
+
+#title-blurb {
+  margin: 22px 0 0;
+  max-width: 920px;
+  font-family: Fraunces, "EB Garamond", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 21px;
+  line-height: 1.35;
+  color: #c4b090;
+}
+
+#title-cta,
+#win-cta {
+  margin: 26px 0 0;
+  font-family: Fraunces, Georgia, serif;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 32px;
+  color: #f4e6c5;
+  opacity: 1;
+  font-variation-settings: "SOFT" 8, "WONK" 0, "opsz" 48;
+}
+
+#title-best {
+  margin: 16px 0 0;
+  font-family: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+  font-weight: 600;
+  font-size: 22px;
+  color: #ffd27a;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+#title-keys {
+  margin: 18px 0 0;
+  font-family: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+  font-size: 14px;
+  color: #c4b090;
+  letter-spacing: 0.02em;
+}
+
+#fail-screen,
+#win-screen {
+  justify-content: center;
+  padding-bottom: 40px;
+  background: rgba(18, 16, 14, 0.28);
+}
+
+#fail-line,
+#win-line {
+  margin: 0;
+  font-family: Fraunces, Georgia, serif;
+  font-weight: 600;
+  font-size: 60px;
+  line-height: 1.1;
+  color: #f4e6c5;
+  opacity: 1;
+  font-variation-settings: "SOFT" 12, "WONK" 0, "opsz" 84;
+}
+
+#fail-score {
+  margin: 22px 0 0;
+  font-family: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+  font-weight: 600;
+  font-size: 28px;
+  color: #f4e6c5;
+  opacity: 1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+#win-ledger {
+  margin-top: 28px;
+  min-width: 420px;
+  padding: 22px 36px 18px;
+  background: #1a1410;
+  border: 3px solid #8a5a32;
+  box-shadow: 0 8px 0 #2a1810, 0 10px 0 #4a2c16, 0 16px 28px rgba(0, 0, 0, 0.45);
+  color: #f4e6c5;
+  opacity: 1;
+}
+
+#win-ledger .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 48px;
+  font-family: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 1.7;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  opacity: 1;
+}
+
+#win-ledger .row.total {
+  font-size: 28px;
+  color: #f4e6c5;
+}
+
+#win-ledger .rule {
+  height: 1px;
+  margin: 8px 0 10px;
+  background: #8a5a32;
+  opacity: 1;
+}
+
+#win-newbest {
+  margin-top: 8px;
+  font-family: Fraunces, Georgia, serif;
+  font-weight: 600;
+  font-size: 22px;
+  color: #ffd27a;
+  opacity: 1;
+}
+
+.hidden {
+  display: none !important;
+}

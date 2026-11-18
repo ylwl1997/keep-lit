@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#140f0a" />
     <title>Keep Lit</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+SC:wght@500;600;700&family=EB+Garamond:ital,wght@1,500;1,600&family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,600,0..30,0;0,9..144,700,0..30,0;1,9..144,600,0..30,0;1,9..144,700,0..30,0&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap"
+      rel="stylesheet"
+    />
     <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
     <script>
       (function () {
@@ -22,39 +28,14 @@
         });
       })();
     </script>
-    <style>
-      html, body {
-        margin: 0;
-        height: 100%;
-        background: #140f0a;
-        overflow: hidden;
-      }
-      #game {
-        width: 100%;
-        height: 100%;
-        position: relative;
-      }
-      #boot-status, #boot-error {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
-        text-align: center;
-        font-family: Georgia, "Palatino Linotype", Palatino, serif;
-        font-size: 18px;
-        line-height: 1.4;
-        color: #c9b48a;
-        background: #140f0a;
-        z-index: 10;
-        pointer-events: none;
-      }
-    </style>
   </head>
   <body>
     <div id="game">
       <div id="boot-status">Loading Keep Lit…</div>
+      <div id="stage">
+        <canvas id="view" width="1280" height="800"></canvas>
+        <div id="hud" hidden></div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
