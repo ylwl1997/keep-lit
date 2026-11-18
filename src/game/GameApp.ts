@@ -11,6 +11,7 @@ import {
   CRAWL_HEAD,
   CRAWL_MUL,
   CUP_SPEED_MUL,
+  DOOR_SQUEEZE,
   EXIT_MARGIN,
   FAIL_BEAT,
   FLAME_MAX,
@@ -18,6 +19,9 @@ import {
   GAME_H,
   GAME_W,
   GRAVITY,
+  HINT_CRAWL_KEY,
+  HINT_JUMP_KEY,
+  INPUT_BUFFER,
   JUMP_V0,
   SCORE_TIME_REF,
   SPRINT_MUL,
@@ -128,12 +132,19 @@ export class GameApp {
   private vaultObsId: string | null = null;
   private doorTimers: Record<string, number | null> = {};
   private lastTs: number | null = null;
+  /** Presses that arrived while still airborne, consumed after landing. */
+  private jumpBuffer = 0;
+  private crawlBuffer = 0;
+  private jumpHintDone = false;
+  private crawlHintDone = false;
 
   constructor(container: HTMLElement, canvas: HTMLCanvasElement, sdk: GameSdk) {
     this.sdk = sdk;
     this.layout = bakeHouse();
     this.playerX = this.layout.rooms[0].worldX + START_OFFSET;
     this.bestScore = this.readBestScore();
+    this.jumpHintDone = this.readFlag(HINT_JUMP_KEY);
+    this.crawlHintDone = this.readFlag(HINT_CRAWL_KEY);
 
     try {
       this.renderer = new THREE.WebGLRenderer({
@@ -151,7 +162,7 @@ export class GameApp {
     this.renderer.setClearColor(C.fog, 1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.02;
+    this.renderer.toneMappingExposure = 1.08;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -159,7 +170,7 @@ export class GameApp {
     this.scene.fog = new THREE.FogExp2(C.fog, 0.01);
     this.scene.background = new THREE.Color(C.fog);
 
-    const ambient = new THREE.AmbientLight(C.ambient, 0.15);
+    const ambient = new THREE.AmbientLight(C.ambient, 0.18);
     this.scene.add(ambient);
 
     this.moon = new THREE.DirectionalLight(C.moonFill, 0.2);
@@ -197,7 +208,8 @@ export class GameApp {
     const hudRoot = document.getElementById("hud");
     if (!(hudRoot instanceof HTMLElement)) throw new Error("Missing #hud");
     this.hud = new Hud(hudRoot, {
-      onJump: () => this.tryJumpOrVault(),
+      onJump: () => this.armJump(),
+      onCrawlPress: () => this.armCrawl(),
       onCupChange: (held) => {
         this.cupButton = held;
       },
@@ -372,6 +384,7 @@ export class GameApp {
       crawl: this.crawling && this.mode === "playing",
       run: this.sprinting && this.mode === "playing",
     });
+    this.updateHints();
   }
 
   private bindInput(container: HTMLElement, canvas: HTMLCanvasElement): void {
@@ -394,10 +407,8 @@ export class GameApp {
       if (GAME_KEYS.has(event.code)) event.preventDefault();
       if (event.repeat) return;
       this.keysHeld.add(event.code);
-      if (JUMP_KEYS.has(event.code)) {
-        this.jumpFlash = 0.12;
-        this.tryJumpOrVault();
-      }
+      if (JUMP_KEYS.has(event.code)) this.armJump();
+      if (CRAWL_KEYS.has(event.code)) this.armCrawl();
       if (
         CUP_KEYS.has(event.code) ||
         JUMP_KEYS.has(event.code) ||
@@ -421,6 +432,7 @@ export class GameApp {
   }
 
   private devRoomIndex(): number | null {
+    // Production builds replace import.meta.env.DEV with false and drop this path.
     if (!import.meta.env.DEV) return null;
     const raw = new URLSearchParams(window.location.search).get("room");
     const idx = raw === null ? Number.NaN : Number(raw);
@@ -437,8 +449,8 @@ export class GameApp {
     return false;
   }
 
-  private wantsCrawl(): boolean {
-    if (this.vaulting || this.playerAir > 2) return false;
+  private wantsCrawlHeld(): boolean {
+    if (this.vaulting) return false;
     if (this.crawlButton) return true;
     for (const code of this.keysHeld) {
       if (CRAWL_KEYS.has(code)) return true;
@@ -446,13 +458,22 @@ export class GameApp {
     return false;
   }
 
-  private wantsSprint(): boolean {
-    if (this.crawling || this.vaulting || this.playerAir > 2) return false;
+  private wantsSprintHeld(): boolean {
+    if (this.crawling || this.vaulting) return false;
     if (this.runButton) return true;
     for (const code of this.keysHeld) {
       if (SPRINT_KEYS.has(code)) return true;
     }
     return false;
+  }
+
+  private armJump(): void {
+    this.jumpBuffer = INPUT_BUFFER;
+    this.jumpFlash = 0.12;
+  }
+
+  private armCrawl(): void {
+    this.crawlBuffer = INPUT_BUFFER;
   }
 
   private onPress(): void {
@@ -509,6 +530,8 @@ export class GameApp {
     this.vaultT = 0;
     this.vaultObsId = null;
     this.doorTimers = {};
+    this.jumpBuffer = 0;
+    this.crawlBuffer = 0;
     this.elapsed = 0;
     this.score = 0;
     this.obstaclePoints = 0;
@@ -534,9 +557,9 @@ export class GameApp {
     return STAND_HEAD + this.playerAir;
   }
 
-  private tryJumpOrVault(): void {
-    if (this.mode !== "playing") return;
-    if (this.vaulting || this.crawling) return;
+  /** Called only after vertical integration, so a landing is already resolved. */
+  private consumeJump(): void {
+    if (this.mode !== "playing" || this.vaulting) return;
     if (this.playerAir > 4) return;
     this.jumpFlash = 0.12;
     const vault = this.findVaultInRange();
@@ -582,6 +605,16 @@ export class GameApp {
     this.score += points;
   }
 
+  private integrateVertical(dt: number): void {
+    if (this.playerAir <= 0 && this.playerVy <= 0) return;
+    this.playerVy -= GRAVITY * dt;
+    this.playerAir += this.playerVy * dt;
+    if (this.playerAir <= 0) {
+      this.playerAir = 0;
+      this.playerVy = 0;
+    }
+  }
+
   private moveAndCollide(dt: number, held: boolean): void {
     if (this.vaulting) {
       this.vaultT += dt;
@@ -596,6 +629,7 @@ export class GameApp {
         this.playerX = this.vaultToX;
         if (this.vaultObsId) {
           this.awardObstacle(this.vaultObsId, 150);
+          this.finishHint("jump");
           this.vaultObsId = null;
         }
       }
@@ -603,8 +637,21 @@ export class GameApp {
       return;
     }
 
-    this.crawling = this.wantsCrawl();
-    this.sprinting = !this.crawling && this.wantsSprint();
+    // Land before consuming jump/crawl so a press in the last moments of a hop registers.
+    this.integrateVertical(dt);
+    if (this.mode !== "playing") return;
+
+    const grounded = this.playerAir <= 0 && this.playerVy <= 0;
+    if (grounded && this.jumpBuffer > 0 && !this.wantsCrawlHeld()) {
+      this.jumpBuffer = 0;
+      this.crawling = false;
+      this.consumeJump();
+    }
+    if (this.vaulting) return;
+
+    const groundedNow = this.playerAir <= 0 && this.playerVy <= 0;
+    this.crawling = groundedNow && (this.wantsCrawlHeld() || this.crawlBuffer > 0);
+    this.sprinting = groundedNow && !this.crawling && this.wantsSprintHeld();
 
     let speedMul = 1;
     if (this.crawling) speedMul = CRAWL_MUL;
@@ -613,20 +660,13 @@ export class GameApp {
 
     const speed = WALK_SPEED * speedMul;
     let nextX = this.playerX + speed * dt;
-
-    if (this.playerAir > 0 || this.playerVy > 0) {
-      this.playerVy -= GRAVITY * dt;
-      this.playerAir += this.playerVy * dt;
-      if (this.playerAir <= 0) {
-        this.playerAir = 0;
-        this.playerVy = 0;
-      }
-    }
-
     nextX = this.resolveBlockers(this.playerX, nextX);
     this.playerX = Math.min(this.layout.width - EXIT_MARGIN + 8, nextX);
     this.walkPhase += speed * dt * (this.sprinting ? 0.11 : this.crawling ? 0.05 : 0.085);
     this.checkGapFail();
+
+    this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
+    if (!this.wantsCrawlHeld()) this.crawlBuffer = Math.max(0, this.crawlBuffer - dt);
   }
 
   private resolveBlockers(fromX: number, toX: number): number {
@@ -662,7 +702,8 @@ export class GameApp {
             }
           } else if (fromX < left + 4 && x > left - 2) {
             const passage = gapRight - left;
-            if (passage < 40) {
+            // Walk arrives after the seal. Sprint still has a sliver wider than DOOR_SQUEEZE.
+            if (passage < DOOR_SQUEEZE) {
               x = Math.min(x, left - 2);
             }
           }
@@ -688,12 +729,15 @@ export class GameApp {
 
   private checkGapFail(): void {
     if (this.mode !== "playing") return;
+    // A jump that just left the ground is still rising; don't treat air=2 as a fall.
+    if (this.playerVy > 40) return;
     for (const room of this.layout.rooms) {
       for (const obs of room.obstacles ?? []) {
         if (obs.kind !== "gap") continue;
         const left = room.worldX + obs.x;
         const right = left + obs.w;
-        if (this.playerX > left + 8 && this.playerX < right - 8 && this.playerAir < 18) {
+        // Feet in the hole. A full jump from the lip stays clear of a 122px gap; walking in does not.
+        if (this.playerX > left + 8 && this.playerX < right - 8 && this.playerAir < 8) {
           this.failRun("flame");
           return;
         }
@@ -741,12 +785,64 @@ export class GameApp {
           if (this.playerX >= right - 2) this.awardObstacle(id, 200);
         } else if (obs.kind === "crawl") {
           const right = left + obs.w;
-          if (this.playerX >= right + 4) this.awardObstacle(id, 150);
+          if (this.playerX >= right + 4) {
+            this.awardObstacle(id, 150);
+            this.finishHint("crawl");
+          }
         } else if (obs.kind === "closingDoor") {
           const passX = left + obs.openW;
           if (this.playerX >= passX + 6) this.awardObstacle(id, 250);
         }
       }
+    }
+  }
+
+  private updateHints(): void {
+    if (this.mode !== "playing") {
+      this.hud.setHint("");
+      return;
+    }
+    let text = "";
+    for (const room of this.layout.rooms) {
+      for (const obs of room.obstacles ?? []) {
+        const left = room.worldX + obs.x;
+        if (obs.kind === "vault" && !this.jumpHintDone) {
+          if (this.playerX > left + obs.w + 8) this.finishHint("jump");
+          else if (this.playerX > left - 280 && this.playerX < left + 24) text = "Jump";
+        } else if (obs.kind === "crawl" && !this.crawlHintDone) {
+          if (this.playerX > left + obs.w + 8) this.finishHint("crawl");
+          else if (!text && this.playerX > left - 300 && this.playerX < left + 20) text = "Hold Crawl";
+        }
+      }
+    }
+    this.hud.setHint(text);
+  }
+
+  private finishHint(which: "jump" | "crawl"): void {
+    if (which === "jump") {
+      if (this.jumpHintDone) return;
+      this.jumpHintDone = true;
+      this.writeFlag(HINT_JUMP_KEY);
+    } else {
+      if (this.crawlHintDone) return;
+      this.crawlHintDone = true;
+      this.writeFlag(HINT_CRAWL_KEY);
+    }
+  }
+
+  private readFlag(key: string): boolean {
+    try {
+      return localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  private writeFlag(key: string): void {
+    try {
+      localStorage.setItem(key, "1");
+    } catch {
+      /* ignore quota / private mode */
     }
   }
 

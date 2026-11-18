@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Cormorant+SC:wght@500;600;700&family=EB+Garamond:ital,wght@1,500;1,600&family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,600,0..30,0;0,9..144,700,0..30,0;1,9..144,600,0..30,0;1,9..144,700,0..30,0&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap"
       rel="stylesheet"
     />
-    <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+    <script async src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
     <script>
       (function () {
         function show(msg) {
@@ -20,11 +20,20 @@
           el.id = "boot-error";
           el.textContent = msg;
         }
+        function sdkNoise(event) {
+          var target = event && event.target;
+          var src = (target && target.src) || (event && event.filename) || "";
+          return String(src).indexOf("crazygames") !== -1;
+        }
         window.addEventListener("error", function (event) {
-          show((event && event.message) || "The game failed to start.");
+          if (sdkNoise(event)) return;
+          if (!event || !event.message) return;
+          show(event.message);
         });
         window.addEventListener("unhandledrejection", function (event) {
-          show(String((event && event.reason) || "The game failed to start."));
+          var reason = String((event && event.reason) || "");
+          if (reason.indexOf("crazygames") !== -1 || reason.indexOf("CrazyGames") !== -1) return;
+          show(reason || "The game failed to start.");
         });
       })();
     </script>

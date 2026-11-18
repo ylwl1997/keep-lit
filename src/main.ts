@@ -1,6 +1,6 @@
 import "./style.css";
-import { hideBootStatus, installCrashOverlay, showBootError } from "./kit/crash-overlay";
-import { initGameSdk } from "./kit/sdk";
+import { hideBootStatus, installCrashOverlay, showBootError, showSdkWarning } from "./kit/crash-overlay";
+import { initGameSdk, noopSdk, type GameSdk } from "./kit/sdk";
 import { GameApp } from "./game/GameApp";
 
 function fitStage(): void {
@@ -11,9 +11,44 @@ function fitStage(): void {
   stage.style.transform = `translate(-50%, -50%) scale(${scale})`;
 }
 
-async function start(): Promise<void> {
+/**
+ * Boot the scene immediately. SDK calls are forwarded when init finishes.
+ * A missing or failed SDK shows a warning and never holds the first frame.
+ */
+function connectSdk(): GameSdk {
+  let current: GameSdk = noopSdk("disabled");
+  let pending = true;
+  const queued: Array<"loadingStart" | "loadingStop" | "gameplayStart" | "gameplayStop"> = [];
+  const forward = (name: (typeof queued)[number]) => () => {
+    if (pending) queued.push(name);
+    else current[name]();
+  };
+  void initGameSdk().then((sdk) => {
+    pending = false;
+    current = sdk;
+    if (sdk.environment === "missing") {
+      showSdkWarning("CrazyGames SDK unavailable. You can still play.");
+    }
+    for (const name of queued) sdk[name]();
+    queued.length = 0;
+  }).catch(() => {
+    pending = false;
+    showSdkWarning("CrazyGames SDK failed. You can still play.");
+  });
+  return {
+    get environment() {
+      return current.environment;
+    },
+    loadingStart: forward("loadingStart"),
+    loadingStop: forward("loadingStop"),
+    gameplayStart: forward("gameplayStart"),
+    gameplayStop: forward("gameplayStop"),
+  };
+}
+
+function start(): void {
   installCrashOverlay();
-  const sdk = await initGameSdk();
+  const sdk = connectSdk();
   sdk.loadingStart();
 
   const container = document.getElementById("game");
@@ -36,4 +71,4 @@ async function start(): Promise<void> {
   }
 }
 
-void start();
+start();

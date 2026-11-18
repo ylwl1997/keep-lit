@@ -168,6 +168,25 @@ body {
   color: #f4e6c5;
 }
 
+#action-hint {
+  position: absolute;
+  left: 50%;
+  top: 148px;
+  transform: translateX(-50%);
+  margin: 0;
+  z-index: 7;
+  font-family: Fraunces, Georgia, "Palatino Linotype", Palatino, "Times New Roman", serif;
+  font-weight: 600;
+  font-size: 28px;
+  line-height: 1;
+  color: #f4e6c5;
+  opacity: 1;
+  letter-spacing: 0.03em;
+  text-shadow: 0 2px 0 #140f0a;
+  pointer-events: none;
+  font-variation-settings: "SOFT" 12, "WONK" 0, "opsz" 48;
+}
+
 /* Copper-framed glass lantern */
 #lantern {
   position: relative;

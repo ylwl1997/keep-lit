@@ -4,6 +4,7 @@ export type FailReason = "flame" | "door";
 
 export type HudHandlers = {
   onJump: () => void;
+  onCrawlPress: () => void;
   onCupChange: (held: boolean) => void;
   onCrawlChange: (held: boolean) => void;
   onRunChange: (held: boolean) => void;
@@ -34,6 +35,7 @@ export class Hud {
   private readonly winTime: HTMLElement;
   private readonly winScore: HTMLElement;
   private readonly winNewBest: HTMLElement;
+  private readonly hint: HTMLElement;
   private readonly btn: Record<"cup" | "jump" | "crawl" | "run", HTMLButtonElement>;
   private readonly held = { cup: false, jump: false, crawl: false, run: false };
   private readonly handlers: HudHandlers;
@@ -89,6 +91,7 @@ export class Hud {
           <p id="win-cta">Press to walk it again</p>
         </div>
       </div>
+      <p id="action-hint" class="hidden"></p>
       <div id="buttons" class="hidden">
         <button type="button" class="plaque" id="btn-cup">Cup</button>
         <div class="right-btns">
@@ -118,6 +121,7 @@ export class Hud {
     this.winTime = must(root, "#win-time");
     this.winScore = must(root, "#win-score");
     this.winNewBest = must(root, "#win-newbest");
+    this.hint = must(root, "#action-hint");
     this.btn = {
       cup: must(root, "#btn-cup") as HTMLButtonElement,
       jump: must(root, "#btn-jump") as HTMLButtonElement,
@@ -213,6 +217,16 @@ export class Hud {
     this.flameFill.style.width = `${(t * 100).toFixed(1)}%`;
   }
 
+  setHint(text: string): void {
+    if (!text) {
+      this.hint.textContent = "";
+      this.hint.classList.add("hidden");
+      return;
+    }
+    this.hint.textContent = text;
+    this.hint.classList.remove("hidden");
+  }
+
   setHeldVisuals(state: { cup: boolean; jump: boolean; crawl: boolean; run: boolean }): void {
     this.paint("cup", state.cup, false);
     this.paint("crawl", state.crawl, false);
@@ -255,7 +269,10 @@ export class Hud {
       } else {
         this.paint(id, true, false);
         if (id === "cup") this.handlers.onCupChange(true);
-        if (id === "crawl") this.handlers.onCrawlChange(true);
+        if (id === "crawl") {
+          this.handlers.onCrawlPress();
+          this.handlers.onCrawlChange(true);
+        }
         if (id === "run") this.handlers.onRunChange(true);
         this.handlers.onStart();
       }

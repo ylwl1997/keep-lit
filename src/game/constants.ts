@@ -27,9 +27,18 @@ export const RECOVER_RATE = 26;
 export const CALM_THRESHOLD = 0.06;
 /** Fail banner hold so score under it is readable. Presentation only. */
 export const FAIL_BEAT = 2.0;
+/** Jump / crawl presses during a landing are remembered this long. */
+export const INPUT_BUFFER = 0.2;
+/**
+ * Closing-door squeeze width in pixels. Sprint reaches the Kitchen Door
+ * margin with about 26px still open; a walk arrives after the seal.
+ */
+export const DOOR_SQUEEZE = 18;
 /** Scoring reference only — not a fail line. */
 export const SCORE_TIME_REF = 90;
 export const BEST_SCORE_KEY = "keep-lit-best-score";
+export const HINT_JUMP_KEY = "keep-lit-hint-jump";
+export const HINT_CRAWL_KEY = "keep-lit-hint-crawl";
 
 export const FONT_STACK =
   'Fraunces, "EB Garamond", "Source Serif 4", "Source Serif Pro", Georgia, "Palatino Linotype", Palatino, "Times New Roman", serif';

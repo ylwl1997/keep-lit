@@ -61,7 +61,8 @@ export class House {
       fan.blades.rotation.z = Math.sin((timeSec / fan.period) * Math.PI * 2) * fan.sweep;
     }
     for (const c of this.curtains) {
-      c.rotation.y = Math.sin(timeSec * 1.6 + c.position.x) * 0.06;
+      const sway = typeof c.userData.sway === "number" ? c.userData.sway : 0.06;
+      c.rotation.y = Math.sin(timeSec * (sway > 0.1 ? 2.4 : 1.3) + c.position.x) * sway;
     }
   }
 
@@ -72,13 +73,14 @@ export class House {
 
     this.floorFor(room);
     this.walls(room, x0, w, mid);
-    this.ceilingBeams(x0, w);
+    this.ceilingBeams(room, x0, w);
     this.wainscot(x0, w);
     this.baseboard(x0, w);
     this.partition(room, x0);
     this.dressing(room, x0, w, mid);
     this.obstacles(room);
     this.hazards(room, x0, w, mid);
+    if (room.kind === "longHall") this.endCap(x0 + w - 0.15);
   }
 
   private floorFor(room: BakedRoom): void {
@@ -166,10 +168,14 @@ export class House {
     this.windows.push({ x: cx, y: sill + h * 0.55, z: WALL_Z + 0.3 });
   }
 
-  private ceilingBeams(x0: number, w: number): void {
+  private ceilingBeams(room: BakedRoom, x0: number, w: number): void {
+    const crawlSpans = (room.obstacles ?? [])
+      .filter((o): o is Extract<Obstacle, { kind: "crawl" }> => o.kind === "crawl")
+      .map((o) => [wu(room.worldX + o.x - 50), wu(room.worldX + o.x + o.w + 50)] as const);
     const count = Math.max(3, Math.round(w / 2.2));
     for (let i = 1; i < count; i++) {
       const x = x0 + (i / count) * w;
+      if (crawlSpans.some(([a, b]) => x >= a && x <= b)) continue;
       const beam = box(0.18, 0.16, FLOOR_DEPTH + 0.1, this.mats.wood, x, CEIL_Y, FLOOR_Z);
       beam.castShadow = true;
       this.group.add(beam);
@@ -230,6 +236,16 @@ export class House {
     // Set dressing stays off the walk line (z near the back wall).
     const back = -1.55;
     switch (room.kind) {
+      case "longHall":
+        // Calm start. Window and a back-wall table, nothing on the vault's walk line.
+        this.sideTable(x0 + wu(90), back);
+        this.pictureRail(x0 + wu(900));
+        // Gap beat: the only chest here is set dressing, against the back wall, off the walk line.
+        this.chest(x0 + wu(1360), -1.72, 0.58, 0.42, 0.4, true);
+        this.pictureRail(x0 + wu(2000));
+        // After the door, a quiet stretch into the exit. Still off the walk line.
+        this.sideTable(x0 + wu(3780), back);
+        break;
       case "foyer":
         this.sideTable(x0 + 1.6, back);
         this.pictureRail(mid + 1.2);
@@ -352,42 +368,79 @@ export class House {
   }
 
   private crawlPiece(room: BakedRoom, obs: Extract<Obstacle, { kind: "crawl" }>): void {
+    // Soffit / bulkhead dropped from the ceiling. The mouth is an empty rectangle:
+    // vertical boarding, a heavy lintel, floorboards running through. No legs, seat, or window.
     const left = wu(room.worldX + obs.x);
-    const w = wu(obs.w);
-    const mid = left + w / 2;
-    const clearance = wu(obs.clearance);
-    const mouthZ = 0.7;
-    const beamH = 0.42;
-    const beamY = clearance + beamH / 2;
+    const width = wu(obs.w);
+    const mid = left + width / 2;
+    const mouthTop = wu(obs.clearance);
+    const lintelH = 0.4;
+    const soffitTop = CEIL_Y + 0.02;
+    const jambW = 0.28;
+    // Shallow in Z so the side camera reads a rectangle, not a long wedge.
+    const z0 = -0.22;
+    const z1 = 0.78;
+    const zMid = (z0 + z1) / 2;
+    const zDepth = z1 - z0;
+    const mouthL = left + jambW;
+    const mouthR = left + width - jambW;
+    const mouthW = mouthR - mouthL;
+    const mouthMid = (mouthL + mouthR) / 2;
 
-    // Thick soffit spanning the room, with a clear dark rectangular mouth on the walk line.
-    const backBeam = box(w + 0.1, beamH, 1.4, this.mats.wood, mid, beamY, WALL_Z + 0.85);
-    backBeam.castShadow = true;
-    this.group.add(backBeam);
-    const frontBeam = box(w + 0.1, beamH, 0.55, this.mats.wood, mid, beamY, 0.85);
-    frontBeam.castShadow = true;
-    this.group.add(frontBeam);
+    const upperH = soffitTop - (mouthTop + lintelH);
+    const upper = box(width + 0.2, upperH, zDepth, this.mats.wood, mid, mouthTop + lintelH + upperH / 2, zMid);
+    upper.castShadow = true;
+    upper.receiveShadow = true;
+    this.group.add(upper);
 
-    // Sides of the mouth — the body must pass through this dark opening.
-    const sideW = 0.22;
-    for (const sz of [-1, 1]) {
-      const side = box(w + 0.1, clearance + beamH * 0.2, sideW, this.mats.woodDeep, mid, (clearance + beamH * 0.2) / 2, sz * (mouthZ / 2 + 0.08));
-      side.castShadow = true;
-      this.group.add(side);
+    const plankW = 0.18;
+    const faceZ = z1 + 0.025;
+    for (let x = left + 0.08; x < left + width - 0.08; x += plankW + 0.03) {
+      const plank = box(
+        plankW,
+        upperH - 0.06,
+        0.04,
+        this.mats.woodMid,
+        x + plankW / 2,
+        mouthTop + lintelH + upperH / 2,
+        faceZ,
+      );
+      plank.castShadow = true;
+      this.group.add(plank);
     }
-    const lintel = box(w + 0.14, 0.14, mouthZ + 0.2, this.mats.woodLit, mid, clearance + 0.05, 0);
+
+    const lintel = box(width + 0.28, lintelH, zDepth + 0.1, this.mats.woodDeep, mid, mouthTop + lintelH / 2, zMid + 0.02);
     lintel.castShadow = true;
+    lintel.receiveShadow = true;
     this.group.add(lintel);
-    // Dark mouth recess so the opening reads as a cave, not a flat stripe.
-    const mouth = box(w * 0.92, clearance - 0.04, 0.08, this.mats.voidMat, mid, clearance / 2, 0);
-    this.group.add(mouth);
-    // Supporting posts at each end, off-center so the mouth stays clear at z=0.
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1.05, 1.05]) {
-        const post = box(0.14, clearance + beamH, 0.14, this.mats.wood, mid + sx * (w / 2 + 0.02), (clearance + beamH) / 2, sz * 0.55);
-        post.castShadow = true;
-        this.group.add(post);
-      }
+    const lip = box(mouthW + 0.04, 0.05, zDepth + 0.14, this.mats.woodLit, mouthMid, mouthTop + 0.015, zMid + 0.02);
+    lip.castShadow = true;
+    this.group.add(lip);
+
+    for (const side of [-1, 1] as const) {
+      const jx = side < 0 ? left + jambW / 2 : left + width - jambW / 2;
+      const jamb = box(jambW, mouthTop + lintelH, zDepth, this.mats.wood, jx, (mouthTop + lintelH) / 2, zMid);
+      jamb.castShadow = true;
+      jamb.receiveShadow = true;
+      this.group.add(jamb);
+      const revealX = side < 0 ? mouthL + 0.03 : mouthR - 0.03;
+      const reveal = box(0.05, Math.max(0.2, mouthTop - 0.06), zDepth * 0.9, this.mats.woodDeep, revealX, mouthTop / 2, zMid);
+      reveal.castShadow = true;
+      this.group.add(reveal);
+    }
+
+    // Dark back of the hole, held above the floor so the boards stay visible.
+    const voidH = Math.max(0.2, mouthTop - 0.18);
+    const recess = box(mouthW - 0.1, voidH, 0.1, this.mats.voidMat, mouthMid, 0.16 + voidH / 2, z0 + 0.16);
+    this.group.add(recess);
+
+    const runner = box(mouthW - 0.06, 0.04, zDepth * 0.62, this.mats.floor, mouthMid, 0.02, 0.05);
+    runner.receiveShadow = true;
+    this.group.add(runner);
+    const seams = Math.max(3, Math.round(mouthW / 0.36));
+    for (let i = 1; i < seams; i++) {
+      const bx = mouthL + (mouthW * i) / seams;
+      this.group.add(box(0.02, 0.045, zDepth * 0.58, this.mats.woodDeep, bx, 0.03, 0.05));
     }
   }
 
@@ -395,16 +448,17 @@ export class House {
     const x = wu(room.worldX + obs.x);
     const openW = wu(obs.openW);
     const h = 2.35;
-    // Visible frame.
-    this.group.add(box(0.16, h + 0.12, 0.16, this.mats.wood, x, h / 2, -openW / 2 - 0.02));
-    this.group.add(box(0.16, h + 0.12, 0.16, this.mats.wood, x, h / 2, openW / 2 + 0.02));
-    this.group.add(box(0.18, 0.16, openW + 0.4, this.mats.woodLit, x, h + 0.06, 0));
+    // Chunkier frame so the passage reads from the side, not as a hairline.
+    this.group.add(box(0.28, h + 0.16, 0.22, this.mats.wood, x, h / 2, -openW / 2 - 0.04));
+    this.group.add(box(0.28, h + 0.16, 0.22, this.mats.wood, x, h / 2, openW / 2 + 0.04));
+    this.group.add(box(0.32, 0.2, openW + 0.5, this.mats.woodLit, x, h + 0.08, 0));
+    this.group.add(box(0.34, 0.08, openW + 0.36, this.mats.woodDeep, x, 0.04, 0));
     // Hinge on the back-wall side; door swings across the walk line toward +z / closed.
     const pivot = new THREE.Group();
     pivot.position.set(x, 0, -openW / 2);
     const door = new THREE.Group();
     door.position.set(0, 0, openW / 2);
-    const leaf = box(0.1, h, openW, this.mats.wood, 0, h / 2, 0);
+    const leaf = box(0.22, h, openW, this.mats.wood, 0, h / 2, 0);
     leaf.castShadow = true;
     door.add(leaf);
     // Panels
@@ -412,7 +466,9 @@ export class House {
     door.add(box(0.04, h * 0.38, openW * 0.36, this.mats.woodMid, 0.06, h * 0.32, openW * 0.18));
     door.add(box(0.04, h * 0.32, openW * 0.36, this.mats.woodMid, 0.06, h * 0.72, -openW * 0.18));
     door.add(box(0.04, h * 0.32, openW * 0.36, this.mats.woodMid, 0.06, h * 0.72, openW * 0.18));
-    door.add(box(0.05, 0.05, 0.05, this.mats.copper, 0.08, h * 0.52, openW * 0.32));
+    door.add(box(0.05, 0.05, 0.05, this.mats.copper, 0.14, h * 0.52, openW * 0.32));
+    // Leading edge catches the candle as the opening shrinks.
+    door.add(box(0.26, h * 0.92, 0.045, this.mats.woodLit, 0.02, h / 2, openW / 2 - 0.02));
     pivot.add(door);
     this.group.add(pivot);
     const key = `${room.index}:door`;
@@ -442,6 +498,20 @@ export class House {
         // curtains placed once per room below
       }
     }
+    if (room.kind === "longHall") {
+      // Still curtains on the opening window so the title reads as a furnished hall.
+      this.curtainAt(x0 + wu(240) - 0.55, 0.03);
+      this.curtainAt(x0 + wu(240) + 0.62, 0.03);
+      for (const h of room.hazards) {
+        if (h.kind !== "draft") continue;
+        // Curtains live inside the draft only, flanking windows, never on a later obstacle.
+        for (let i = 0; i < 3; i++) {
+          const local = h.x + (h.w * (i + 0.5)) / 3;
+          this.curtainAt(x0 + wu(local) - 0.35, 0.2);
+          this.curtainAt(x0 + wu(local) + 0.45, 0.16);
+        }
+      }
+    }
     if (room.kind === "curtains" || room.kind === "storm" || room.kind === "hall") {
       const spots = room.kind === "curtains" ? [0.22, 0.5, 0.78] : [0.3, 0.7];
       for (const t of spots) this.curtainAt(x0 + w * t);
@@ -457,13 +527,14 @@ export class House {
     void mid;
   }
 
-  private curtainAt(x: number): void {
+  private curtainAt(x: number, sway = 0.05): void {
     const cloth = box(0.55, 2.4, 0.12, this.mats.curtain, 0, 1.2, 0);
     cloth.castShadow = true;
     const fold = box(0.18, 2.35, 0.16, this.mats.curtainShadow, 0.16, 1.18, 0.02);
     const rod = box(0.8, 0.05, 0.05, this.mats.copper, 0, 2.42, 0);
     const g = new THREE.Group();
     g.position.set(x, 0.0, WALL_Z + 0.28);
+    g.userData.sway = sway;
     g.add(cloth, fold, rod);
     this.group.add(g);
     this.curtains.push(g);
@@ -526,6 +597,27 @@ export class House {
     this.group.add(leaf);
     this.windows.push({ x, y: 1.4, z: WALL_Z + 0.3 });
   }
+
+  /** Glowing doorway at the end of the hall. Not a gate — reaching it with the flame lit wins. */
+  private endCap(x: number): void {
+    const openW = 1.45;
+    const openH = 2.5;
+    const side = (FLOOR_DEPTH - openW) / 2;
+    const leftWall = box(0.24, WALL_H, side, this.mats.plaster, x, WALL_H / 2, FLOOR_Z0 + side / 2);
+    const rightWall = box(0.24, WALL_H, side, this.mats.plaster, x, WALL_H / 2, FLOOR_Z1 - side / 2);
+    leftWall.receiveShadow = true;
+    rightWall.receiveShadow = true;
+    this.group.add(leftWall, rightWall);
+    const lintel = box(0.26, WALL_H - openH, openW + 0.12, this.mats.wood, x, openH + (WALL_H - openH) / 2, 0);
+    lintel.castShadow = true;
+    this.group.add(lintel);
+    this.group.add(box(0.22, openH, 0.2, this.mats.woodLit, x - 0.02, openH / 2, -openW / 2));
+    this.group.add(box(0.22, openH, 0.2, this.mats.woodLit, x - 0.02, openH / 2, openW / 2));
+    // Tilt the glow toward the side camera so the doorway reads as a lit opening, not a hairline.
+    const glow = box(0.08, openH - 0.28, openW - 0.28, this.mats.exitGlow, x + 0.05, openH / 2, 0);
+    glow.rotation.y = -0.7;
+    this.group.add(glow);
+  }
 }
 
 function box(
@@ -577,6 +669,13 @@ function buildMaterials(textures: GameTextures) {
       roughness: 1,
       metalness: 0,
     }),
+    exitGlow: new THREE.MeshStandardMaterial({
+      color: 0x6a3a22,
+      emissive: C.flameBounce,
+      emissiveIntensity: 0.65,
+      roughness: 0.72,
+      metalness: 0.02,
+    }),
   };
 }
 
@@ -584,6 +683,16 @@ function windowPlan(room: BakedRoom): Array<{ localX: number; w: number; h: numb
   const tall = { w: 1.15, h: 1.55, sill: 1.25 };
   const wide = { w: 1.6, h: 1.25, sill: 1.35 };
   switch (room.kind) {
+    case "longHall":
+      // Windows mark calm and the draft. None sit on the vault, gap, crawl mouth, or door.
+      return [
+        { localX: 240, ...tall },
+        { localX: 900, ...tall },
+        { localX: 1620, ...tall },
+        { localX: 1910, ...wide },
+        { localX: 2200, ...tall },
+        { localX: 3820, ...tall },
+      ];
     case "foyer":
       return [{ localX: 700, ...tall }];
     case "hall":

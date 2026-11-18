@@ -219,6 +219,8 @@ export function makeMaterial(
     cloned.repeat.set(rx, ry);
     cloned.needsUpdate = true;
     mat.map = cloned;
+    // The canvas maps already carry palette color. Multiplying by the hex crushes them to black.
+    mat.color.set(0xffffff);
   }
   if (kind === "metal") {
     mat.roughness = opts?.roughness ?? 0.5;

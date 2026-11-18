@@ -144,16 +144,18 @@ export class Character {
     this.flameRoot.add(core, mid);
     this.flameMeshes.push(core, mid);
 
-    this.candleLight = new THREE.PointLight(C.flameBounce, 2.7, 9, 2);
+    // Keep the key outside the coat. A light parented to the wick sits inside the mesh and shadows the whole hall.
+    this.candleLight = new THREE.PointLight(C.flameBounce, 3, 10, 2);
     this.candleLight.castShadow = true;
     this.candleLight.shadow.mapSize.set(1024, 1024);
-    this.candleLight.shadow.bias = -0.0004;
-    this.candleLight.shadow.normalBias = 0.03;
-    this.candleLight.shadow.camera.near = 0.1;
-    this.candleLight.shadow.camera.far = 10;
-    this.flameRoot.add(this.candleLight);
+    this.candleLight.shadow.bias = -0.001;
+    this.candleLight.shadow.normalBias = 0.04;
+    this.candleLight.shadow.camera.near = 0.2;
+    this.candleLight.shadow.camera.far = 12;
+    this.candleLight.position.set(-0.45, 1.2, 0.35);
+    this.group.add(this.candleLight);
 
-    this.flameCoreLight = new THREE.PointLight(C.flameCore, 1.4, 2.2, 2);
+    this.flameCoreLight = new THREE.PointLight(C.flameCore, 1.6, 1.6, 2);
     this.flameRoot.add(this.flameCoreLight);
 
     this.lThigh = new THREE.Group();
@@ -238,7 +240,8 @@ export class Character {
     this.lShin.rotation.set(0.08, 0, 0);
     this.rShin.rotation.set(0.08, 0, 0);
     this.stick.rotation.set(0, 0, 0);
-    this.group.rotation.set(0, 0.15, 0);
+    // Face +X so the stride reads in the side view, candle toward the camera.
+    this.group.rotation.set(0, Math.PI / 2, 0);
 
     if (pose === "stand") {
       this.lThigh.rotation.x = stride * 0.35;
@@ -246,8 +249,8 @@ export class Character {
       this.lShin.rotation.x = 0.1 + Math.max(0, -stride) * 0.25;
       this.rShin.rotation.x = 0.1 + Math.max(0, stride) * 0.25;
       this.lArm.rotation.x = -stride * 0.28;
-      this.rArm.rotation.x = stride * 0.18;
-      this.rFore.rotation.x = -0.35;
+      this.rArm.rotation.set(-0.45 + stride * 0.05, 0.15, -0.2);
+      this.rFore.rotation.set(-1.25, 0.15, 0);
       this.hip.position.y = 0.74 + Math.abs(stride) * 0.015;
     } else if (pose === "cup") {
       this.hip.position.y = 0.58;
@@ -285,9 +288,9 @@ export class Character {
       this.rThigh.rotation.set(-0.35, 0, -0.2);
       this.lShin.rotation.x = 0.7;
       this.rShin.rotation.x = 0.2;
-      this.group.rotation.y = 0.35;
+      this.group.rotation.y = Math.PI / 2 + 0.35;
     } else if (pose === "crawl") {
-      this.hip.position.set(0.15, 0.28, 0);
+      this.hip.position.set(0.15, 0.2, 0);
       this.torso.rotation.set(1.15, 0, 0);
       this.head.rotation.x = -0.7;
       this.head.position.set(0, 0.72, 0.08);
@@ -300,7 +303,7 @@ export class Character {
       this.lShin.rotation.x = 1.1;
       this.rShin.rotation.x = 1.05;
       this.stick.rotation.set(0.4, 0, 0);
-      this.group.rotation.y = 0.05;
+      this.group.rotation.y = Math.PI / 2 + 0.06;
     } else if (pose === "run") {
       this.hip.position.y = 0.78 + Math.abs(stride) * 0.03;
       this.torso.rotation.x = 0.35;
@@ -318,14 +321,24 @@ export class Character {
 
     this.torso.rotation.z += leanX * 0.18;
     this.torso.rotation.x += -leanY * 0.12;
+    this.placeCandleLight(pose);
     this.flickerFlame(timeSec, pose !== "vault");
+  }
+
+  private placeCandleLight(pose: CharacterPose): void {
+    // Group yaw is +90°, so local -X is toward the camera and local +Z is down the hall.
+    if (pose === "crawl") this.candleLight.position.set(-0.38, 0.46, 0.55);
+    else if (pose === "cup") this.candleLight.position.set(-0.42, 0.95, 0.32);
+    else if (pose === "vault") this.candleLight.position.set(-0.4, 1.15, 0.2);
+    else if (pose === "jump") this.candleLight.position.set(-0.48, 1.35, 0.25);
+    else this.candleLight.position.set(-0.36, 1.05, 0.42);
   }
 
   setLit(on: boolean, intensity = 1): void {
     this.flameRoot.visible = on;
     this.smoke.visible = !on;
     const k = on ? Math.max(0.2, intensity) : 0.22;
-    this.candleLight.intensity = on ? 2.7 * k : 0.32;
+    this.candleLight.intensity = on ? 3 * k : 0.45;
     this.flameCoreLight.intensity = on ? 1.4 * k : 0;
     this.candleLight.distance = on ? 9 : 6;
   }
