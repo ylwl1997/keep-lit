@@ -1,12 +1,12 @@
 import Phaser from "phaser";
 import type { GameSdk } from "../kit/sdk";
 import {
+  BEST_SCORE_KEY,
   C,
   CRAWL_CHEST,
   CRAWL_HEAD,
   CRAWL_MUL,
   CUP_SPEED_MUL,
-  DEV_ROOM_TIME_FLOOR,
   EXIT_MARGIN,
   FAIL_BEAT,
   FLAME_MAX,
@@ -16,7 +16,7 @@ import {
   GAME_W,
   GRAVITY,
   JUMP_V0,
-  RUN_TIME,
+  SCORE_TIME_REF,
   SPRINT_MUL,
   STAND_CHEST,
   STAND_HEAD,
@@ -29,6 +29,7 @@ import {
 import { drawStaticHouse } from "./drawHouse";
 import {
   bakeHouse,
+  obstacleId,
   roomAt,
   type BakedRoom,
   type HouseLayout,
@@ -46,7 +47,7 @@ import {
 } from "./wind";
 
 type Mode = "title" | "playing" | "failing" | "won";
-type FailReason = "flame" | "time" | "door";
+type FailReason = "flame" | "door";
 
 type Particle = {
   x: number;
@@ -127,17 +128,31 @@ export class PlayScene extends Phaser.Scene {
   private leanY = 0;
   private walkPhase = 0;
   private spawnAcc = 0;
-  private timeLeft = RUN_TIME;
+  private elapsed = 0;
+  private score = 0;
+  private bestScore = 0;
+  private obstaclePoints = 0;
+  private roomFlamePoints = 0;
+  private scoredObstacles = new Set<string>();
+  private isFullRun = true;
+  private lastRoomIndex = 0;
+  private runStartX = 0;
+  private winBreakdown = { obstacles: 0, flame: 0, time: 0 };
+  private newBest = false;
   private crawling = false;
   private sprinting = false;
   private vaulting = false;
   private vaultT = 0;
   private vaultFromX = 0;
   private vaultToX = 0;
+  private vaultObsId: string | null = null;
   private doorTimers: Record<string, number | null> = {};
   private touchBtns: TouchBtn[] = [];
   private hintText!: Phaser.GameObjects.Text;
   private timerText!: Phaser.GameObjects.Text;
+  private scoreText!: Phaser.GameObjects.Text;
+  private bestText!: Phaser.GameObjects.Text;
+  private titleBestText!: Phaser.GameObjects.Text;
 
   private worldGfx!: Phaser.GameObjects.Graphics;
   private dynGfx!: Phaser.GameObjects.Graphics;
@@ -224,7 +239,7 @@ export class PlayScene extends Phaser.Scene {
       .text(GAME_W * 0.5, 340, "Press to begin", {
         fontFamily: FONT,
         fontSize: "22px",
-        color: C.textDim,
+        color: C.text,
         align: "center",
       })
       .setOrigin(0.5)
@@ -244,13 +259,14 @@ export class PlayScene extends Phaser.Scene {
       .setAlpha(0)
       .setShadow(0, 8, "#000000", 14, true, true);
     this.bannerSub = this.add
-      .text(GAME_W * 0.5, 360, "", {
+      .text(GAME_W * 0.5, 368, "", {
         fontFamily: FONT,
         fontSize: "20px",
         color: C.textDim,
         align: "center",
+        lineSpacing: 10,
       })
-      .setOrigin(0.5)
+      .setOrigin(0.5, 0)
       .setScrollFactor(0)
       .setDepth(22)
       .setAlpha(0);
@@ -283,7 +299,38 @@ export class PlayScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(22)
       .setAlpha(0);
+    this.scoreText = this.add
+      .text(48, 64, "", {
+        fontFamily: UI_FONT,
+        fontSize: "16px",
+        color: C.textDim,
+      })
+      .setScrollFactor(0)
+      .setDepth(22)
+      .setAlpha(0);
+    this.bestText = this.add
+      .text(GAME_W - 48, 56, "", {
+        fontFamily: UI_FONT,
+        fontSize: "15px",
+        color: C.textMute,
+      })
+      .setOrigin(1, 0)
+      .setScrollFactor(0)
+      .setDepth(22)
+      .setAlpha(0);
+    this.titleBestText = this.add
+      .text(GAME_W * 0.5, 388, "", {
+        fontFamily: UI_FONT,
+        fontSize: "18px",
+        color: C.textDim,
+        align: "center",
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(22)
+      .setAlpha(0);
 
+    this.bestScore = this.readBestScore();
     this.buildTouchControls();
     this.bindInput();
     this.setTouchVisible(false);
@@ -468,13 +515,34 @@ export class PlayScene extends Phaser.Scene {
     return Math.min(START_OFFSET, room.width * 0.35);
   }
 
-  private beginRun(): void {
+  private readBestScore(): number {
+    try {
+      const raw = localStorage.getItem(BEST_SCORE_KEY);
+      if (raw == null) return 0;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return 0;
+      return Math.floor(n);
+    } catch {
+      return 0;
+    }
+  }
 
+  private writeBestScore(value: number): void {
+    try {
+      localStorage.setItem(BEST_SCORE_KEY, String(Math.max(0, Math.floor(value))));
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }
+
+  private beginRun(): void {
     this.attempts += 1;
     this.mode = "playing";
     const jump = this.devRoomIndex();
+    this.isFullRun = jump === null;
     const startRoom = jump === null ? this.house.rooms[0] : this.house.rooms[jump];
     this.playerX = startRoom.worldX + this.startLocalX(startRoom);
+    this.runStartX = this.playerX;
     this.playerAir = 0;
     this.playerVy = 0;
     this.flame = FLAME_MAX;
@@ -489,15 +557,17 @@ export class PlayScene extends Phaser.Scene {
     this.sprinting = false;
     this.vaulting = false;
     this.vaultT = 0;
+    this.vaultObsId = null;
     this.doorTimers = {};
-
-    if (jump === null) {
-      this.timeLeft = RUN_TIME;
-    } else {
-      const remaining = Math.max(200, this.house.width - this.playerX);
-      const full = Math.max(1, this.house.width - START_OFFSET);
-      this.timeLeft = Math.max(DEV_ROOM_TIME_FLOOR, RUN_TIME * (remaining / full) + 8);
-    }
+    this.elapsed = 0;
+    this.score = 0;
+    this.obstaclePoints = 0;
+    this.roomFlamePoints = 0;
+    this.scoredObstacles = new Set();
+    this.lastRoomIndex = startRoom.index;
+    this.winBreakdown = { obstacles: 0, flame: 0, time: 0 };
+    this.newBest = false;
+    this.bestScore = this.readBestScore();
 
     this.follower.setPosition(this.playerX, FLOOR_Y - 90);
     this.cameras.main.centerOn(this.playerX + 240, GAME_H * 0.5);
@@ -505,11 +575,14 @@ export class PlayScene extends Phaser.Scene {
     this.taglineText.setAlpha(0);
     this.hintText.setAlpha(0);
     this.promptText.setAlpha(0);
+    this.titleBestText.setAlpha(0);
     this.bannerText.setAlpha(0);
     this.bannerSub.setAlpha(0);
     this.roomText.setAlpha(1);
     this.attemptText.setAlpha(1);
     this.timerText.setAlpha(1);
+    this.scoreText.setAlpha(1);
+    this.bestText.setAlpha(1);
     this.setTouchVisible(true);
     this.sdk.gameplayStart();
   }
@@ -562,9 +635,17 @@ export class PlayScene extends Phaser.Scene {
     this.vaultT = 0;
     this.vaultFromX = this.playerX;
     this.vaultToX = room.worldX + obs.x + obs.w + 18;
+    this.vaultObsId = obstacleId(room.index, obs);
     this.playerVy = 0;
     this.crawling = false;
     this.sprinting = false;
+  }
+
+  private awardObstacle(id: string, points: number): void {
+    if (this.scoredObstacles.has(id)) return;
+    this.scoredObstacles.add(id);
+    this.obstaclePoints += points;
+    this.score += points;
   }
 
   private moveAndCollide(dt: number, held: boolean): void {
@@ -579,6 +660,10 @@ export class PlayScene extends Phaser.Scene {
         this.playerAir = 0;
         this.playerVy = 0;
         this.playerX = this.vaultToX;
+        if (this.vaultObsId) {
+          this.awardObstacle(this.vaultObsId, 150);
+          this.vaultObsId = null;
+        }
       }
       this.walkPhase += 10 * dt;
       return;
@@ -688,13 +773,8 @@ export class PlayScene extends Phaser.Scene {
     }
   }
 
-  private updateDoorsAndTimers(dt: number): void {
-    this.timeLeft -= dt;
-    if (this.timeLeft <= 0) {
-      this.timeLeft = 0;
-      this.failRun("time");
-      return;
-    }
+  private updateDoorsAndElapsed(dt: number): void {
+    this.elapsed += dt;
     // Closing door seal while player is in the doorway.
     for (const room of this.house.rooms) {
       for (const obs of room.obstacles ?? []) {
@@ -705,6 +785,48 @@ export class PlayScene extends Phaser.Scene {
         if (open <= 0.02 && this.playerX >= left - 4 && this.playerX <= right + 10) {
           this.failRun("door");
           return;
+        }
+      }
+    }
+  }
+
+  private updateScoreProgress(): void {
+    if (this.mode !== "playing") return;
+    const room = roomAt(this.house.rooms, this.playerX);
+    if (room.index > this.lastRoomIndex) {
+      // Left previous room(s) — flame bonus per room exit with healthy flame.
+      for (let i = this.lastRoomIndex; i < room.index; i++) {
+        if (this.flame >= 80) {
+          this.roomFlamePoints += 50;
+          this.score += 50;
+        }
+      }
+      this.lastRoomIndex = room.index;
+    }
+
+    for (const r of this.house.rooms) {
+      for (const obs of r.obstacles ?? []) {
+        const id = obstacleId(r.index, obs);
+        if (this.scoredObstacles.has(id)) continue;
+        const left = r.worldX + obs.x;
+        // DEV ?room= starts mid-house: don't credit obstacles already behind the spawn.
+        if (this.runStartX >= left - 8) continue;
+        if (obs.kind === "gap") {
+          const right = left + obs.w;
+          if (this.playerX >= right - 2) {
+            this.awardObstacle(id, 200);
+          }
+        } else if (obs.kind === "crawl") {
+          const right = left + obs.w;
+          // Emerged past the far side (must have been able to pass → crawling).
+          if (this.playerX >= right + 4) {
+            this.awardObstacle(id, 150);
+          }
+        } else if (obs.kind === "closingDoor") {
+          const passX = left + obs.openW;
+          if (this.playerX >= passX + 6) {
+            this.awardObstacle(id, 250);
+          }
         }
       }
     }
@@ -748,7 +870,8 @@ export class PlayScene extends Phaser.Scene {
         this.leanX += (wind.dx * wind.strength * leanMul - this.leanX) * Math.min(1, dt * 7);
         this.leanY += (wind.dy * wind.strength * leanMul - this.leanY) * Math.min(1, dt * 7);
         this.spawnFx(dt, timeSec, wind, held);
-        this.updateDoorsAndTimers(dt);
+        this.updateDoorsAndElapsed(dt);
+        this.updateScoreProgress();
         if (this.mode === "playing") {
           if (this.flame <= 0) this.failRun("flame");
           else if (this.playerX >= this.house.width - EXIT_MARGIN) this.winRun();
@@ -802,7 +925,7 @@ export class PlayScene extends Phaser.Scene {
         life: 0.28 + Math.random() * 0.2,
         max: 0.4,
         size: 3 + Math.random() * 5,
-        color: reason === "time" ? 0xc0b090 : C.flame,
+        color: C.flame,
         kind: "puff",
       });
     }
@@ -811,6 +934,25 @@ export class PlayScene extends Phaser.Scene {
   private winRun(): void {
     this.mode = "won";
     this.sdk.gameplayStop();
+    // Final room exit flame bonus if still in last room with healthy flame.
+    if (this.flame >= 80) {
+      this.roomFlamePoints += 50;
+      this.score += 50;
+    }
+    const flameBonus = Math.floor(this.flame) * 10;
+    const timeBonus = Math.max(0, Math.floor((SCORE_TIME_REF - this.elapsed) * 8));
+    this.winBreakdown = {
+      obstacles: this.obstaclePoints,
+      flame: this.roomFlamePoints + flameBonus,
+      time: timeBonus,
+    };
+    this.score = this.obstaclePoints + this.winBreakdown.flame + timeBonus;
+    this.newBest = false;
+    if (this.isFullRun && this.score > this.bestScore) {
+      this.bestScore = this.score;
+      this.writeBestScore(this.bestScore);
+      this.newBest = true;
+    }
     this.roomText.setAlpha(1);
     this.promptText.setText("Press to walk it again").setAlpha(1);
     this.setTouchVisible(false);
@@ -1401,7 +1543,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private formatTime(sec: number): string {
-    const s = Math.max(0, Math.ceil(sec));
+    const s = Math.max(0, Math.floor(sec));
     const m = Math.floor(s / 60);
     const r = s % 60;
     return `${m}:${r.toString().padStart(2, "0")}`;
@@ -1412,33 +1554,46 @@ export class PlayScene extends Phaser.Scene {
       this.titleText.setAlpha(1);
       this.taglineText.setAlpha(1);
       this.hintText.setAlpha(0.55);
+      this.promptText.setAlpha(0.88 + Math.sin(timeSec * 2.2) * 0.12);
       this.timerText.setAlpha(0);
+      this.scoreText.setAlpha(0);
+      this.bestText.setAlpha(0);
+      if (this.bestScore > 0) {
+        this.titleBestText.setText(`Best  ${this.bestScore}`).setAlpha(0.85);
+      } else {
+        this.titleBestText.setText("").setAlpha(0);
+      }
       return;
     }
+    this.titleBestText.setAlpha(0);
     const room = roomAt(this.house.rooms, this.playerX);
     this.roomText.setText(room.name);
     this.attemptText.setText(this.attempts > 1 ? `Attempt ${this.attempts}` : "");
-    if (this.mode === "playing" || this.mode === "failing") {
-      const urgent = this.timeLeft <= 15;
-      this.timerText
-        .setText(this.formatTime(this.timeLeft))
-        .setColor(urgent ? "#ff8a5a" : C.textDim)
-        .setAlpha(1);
+    if (this.mode === "playing" || this.mode === "failing" || this.mode === "won") {
+      this.timerText.setText(this.formatTime(this.elapsed)).setColor(C.textDim).setAlpha(1);
+      this.scoreText.setText(`Score  ${this.score}`).setAlpha(1);
+      this.bestText.setText(this.bestScore > 0 ? `Best  ${this.bestScore}` : "Best  —").setAlpha(1);
     } else {
       this.timerText.setAlpha(0);
+      this.scoreText.setAlpha(0);
+      this.bestText.setAlpha(0);
     }
     if (this.mode === "failing") {
       const msg =
-        this.failReason === "time"
-          ? "Time's up."
-          : this.failReason === "door"
-            ? "The door closed."
-            : "The flame went out.";
+        this.failReason === "door" ? "The door closed." : "The flame went out.";
       this.bannerText.setText(msg).setAlpha(1);
-      this.bannerSub.setText("").setAlpha(0);
+      this.bannerSub.setText(`Score  ${this.score}`).setAlpha(0.9);
     } else if (this.mode === "won") {
       this.bannerText.setText("The house is still lit.").setAlpha(1);
-      this.bannerSub.setText("Press to walk it again").setAlpha(0.45 + Math.sin(timeSec * 2.2) * 0.35);
+      const b = this.winBreakdown;
+      const lines = [
+        `Obstacles  ${b.obstacles}    Flame  ${b.flame}    Time  ${b.time}`,
+        `Score  ${this.score}` + (this.newBest ? "    New best" : ""),
+        "Press to walk it again",
+      ];
+      this.bannerSub
+        .setText(lines.join("\n"))
+        .setAlpha(0.55 + Math.sin(timeSec * 2.2) * 0.25);
       this.promptText.setAlpha(0);
     } else {
       this.bannerText.setAlpha(0);

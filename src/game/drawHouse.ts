@@ -161,11 +161,9 @@ function furnitureFoyer(g: G, r: BakedRoom): void {
   // curtain rod + static drape tails (billow is dynamic)
   g.fillStyle(C.woodDark, 1);
   g.fillRect(x + 548, 154, 214, 8);
-  drawRug(g, x + 260, FLOOR_Y - 14, 420, 70, 0x3a2420);
-  drawTable(g, x + 300, FLOOR_Y - 86, 200, 86, 18);
-  g.fillStyle(0x4a3020, 1);
-  g.fillEllipse(x + 400, FLOOR_Y - 96, 36, 16);
-  // coat rack
+  // Short rug before the vault chest (obstacle draws the walk-line blocker).
+  drawRug(g, x + 200, FLOOR_Y - 14, 260, 70, 0x3a2420);
+  // coat rack (side, early teach stretch)
   g.fillStyle(C.woodDark, 1);
   g.fillRect(x + 150, FLOOR_Y - 250, 8, 250);
   g.fillRect(x + 128, FLOOR_Y - 248, 52, 8);
@@ -178,6 +176,10 @@ function furnitureFoyer(g: G, r: BakedRoom): void {
   g.fillRect(x + 240, 200, 70, 86);
   g.fillStyle(0x2a2018, 1);
   g.fillRect(x + 248, 208, 54, 70);
+  // small console against the far wall after the vault — not on the approach line
+  drawTable(g, x + 760, FLOOR_Y - 72, 120, 72, 14);
+  g.fillStyle(0x4a3020, 1);
+  g.fillEllipse(x + 820, FLOOR_Y - 80, 28, 12);
 }
 
 function furnitureHall(g: G, r: BakedRoom): void {
@@ -211,25 +213,27 @@ function furnitureFrontDoor(g: G, r: BakedRoom): void {
   g.fillRect(dx - 14, 168, 168, 16);
   g.fillRect(dx - 14, 186, 14, FLOOR_Y - 194);
   g.fillRect(dx + 140, 186, 14, FLOOR_Y - 194);
+  // Approach rug only — gap obstacle punches the threshold beyond the door.
   drawRug(g, x + 80, FLOOR_Y - 12, 280, 50, 0x2a1a14);
-  drawTable(g, x + 140, FLOOR_Y - 80, 150, 80);
-  // bench
+  // Side console before the door (visual only, left of gap)
+  drawTable(g, x + 100, FLOOR_Y - 70, 110, 70);
+  // Bench well past the gap so it cannot read as a walk-around.
   g.fillStyle(C.woodMid, 1);
-  g.fillRect(x + 720, FLOOR_Y - 58, 160, 14);
-  g.fillRect(x + 728, FLOOR_Y - 44, 8, 44);
-  g.fillRect(x + 864, FLOOR_Y - 44, 8, 44);
+  g.fillRect(x + 760, FLOOR_Y - 58, 140, 14);
+  g.fillRect(x + 768, FLOOR_Y - 44, 8, 44);
+  g.fillRect(x + 880, FLOOR_Y - 44, 8, 44);
 }
 
 function furnitureFan(g: G, r: BakedRoom): void {
   const x = r.worldX;
   drawWindow(g, x + 80, 180, 140, 210);
-  // wall sofa (decorative, off the walking line)
-  g.fillStyle(0x3a2a28, 1);
-  g.fillRoundedRect(x + 120, FLOOR_Y - 90, 180, 90, 12);
-  g.fillStyle(0x2e2220, 1);
-  g.fillRoundedRect(x + 130, FLOOR_Y - 124, 70, 46, 10);
-  g.fillRoundedRect(x + 220, FLOOR_Y - 124, 70, 46, 10);
-  // side table
+  // No decorative sofa — the vault obstacle is the only walk-line blocker.
+  // Side plant / pedestal far past the vault so it cannot read as a bypass.
+  g.fillStyle(C.woodDark, 1);
+  g.fillRect(x + 900, FLOOR_Y - 36, 28, 36);
+  g.fillStyle(0x1c2a18, 1);
+  g.fillCircle(x + 914, FLOOR_Y - 56, 22);
+  // side table (after vault)
   drawTable(g, x + 820, FLOOR_Y - 70, 90, 70, 12);
   g.fillStyle(0x4a4030, 1);
   g.fillRect(x + 848, FLOOR_Y - 118, 14, 48);
@@ -290,19 +294,20 @@ function furnitureKitchen(g: G, r: BakedRoom): void {
 function furnitureLeaky(g: G, r: BakedRoom): void {
   const x = r.worldX;
   drawWindow(g, x + 40, 190, 120, 200);
-  // ceiling stains
+  // ceiling stains over the pit
   g.fillStyle(0x1a2218, 0.55);
-  g.fillEllipse(x + 420, CEILING_Y + 24, 180, 40);
-  g.fillEllipse(x + 680, CEILING_Y + 18, 140, 30);
+  g.fillEllipse(x + 500, CEILING_Y + 24, 200, 44);
+  g.fillEllipse(x + 720, CEILING_Y + 18, 140, 30);
   g.fillStyle(0x243028, 0.35);
-  g.fillEllipse(x + 430, CEILING_Y + 28, 80, 16);
-  // side puddles (main gap is drawn as an obstacle)
+  g.fillEllipse(x + 510, CEILING_Y + 28, 90, 16);
+  // side puddles flanking the wide gap (gap itself is the obstacle)
   g.fillStyle(0x1a2830, 0.45);
-  g.fillEllipse(x + 700, FLOOR_Y + 14, 90, 14);
+  g.fillEllipse(x + 400, FLOOR_Y + 14, 70, 12);
+  g.fillEllipse(x + 720, FLOOR_Y + 14, 90, 14);
   g.fillStyle(0x8ab0c0, 0.1);
-  g.fillEllipse(x + 700, FLOOR_Y + 12, 50, 6);
-  // buckets
-  for (const bx of [360, 660]) {
+  g.fillEllipse(x + 720, FLOOR_Y + 12, 50, 6);
+  // buckets clear of the pit (gap ~460–584)
+  for (const bx of [340, 680]) {
     g.fillStyle(C.metal, 1);
     g.fillRect(x + bx, FLOOR_Y - 36, 36, 36);
     g.fillStyle(C.metalLite, 1);
@@ -334,7 +339,8 @@ function furnitureCross(g: G, r: BakedRoom): void {
   g.fillRect(dx - 70, 196, 58, FLOOR_Y - 204);
   g.fillStyle(C.trim, 1);
   g.fillCircle(dx - 22, 400, 5);
-  drawTable(g, x + 480, FLOOR_Y - 78, 140, 78);
+  // No mid-path table — vault chest is the walk-line blocker.
+  drawTable(g, x + 120, FLOOR_Y - 68, 100, 68);
 }
 
 function furnitureAttic(g: G, r: BakedRoom): void {
@@ -401,7 +407,7 @@ function furnitureStairwell(g: G, r: BakedRoom): void {
   g.fillStyle(C.trim, 1);
   g.fillRect(x + 70, FLOOR_Y - 110, 10, 110);
   g.fillRect(x + 70, FLOOR_Y - 110, r.width - 200, 7);
-  // bench on the calm landing (floor, readable pocket)
+  // bench on the calm mid landing — before the gap at ~880
   g.fillStyle(C.wood, 1);
   g.fillRect(lx + 40, FLOOR_Y - 62, 160, 14);
   g.fillRect(lx + 48, FLOOR_Y - 48, 8, 48);
@@ -424,17 +430,17 @@ function furnitureStorm(g: G, r: BakedRoom): void {
   g.strokeRect(x + 226, 290, 38, 130);
   g.strokeRect(x + 716, 150, 38, 130);
   g.strokeRect(x + 716, 290, 38, 130);
-  // plant
+  // plant (approach side)
   g.fillStyle(C.woodDark, 1);
   g.fillRect(x + 80, FLOOR_Y - 40, 36, 40);
   g.fillStyle(0x1c2a18, 1);
   g.fillCircle(x + 98, FLOOR_Y - 64, 28);
   g.fillCircle(x + 80, FLOOR_Y - 80, 16);
   g.fillCircle(x + 116, FLOOR_Y - 78, 18);
-  // calm pocket chair
+  // calm pocket chair well past the fallen-cabinet vault
   g.fillStyle(0x2a2420, 1);
-  g.fillRoundedRect(x + 940, FLOOR_Y - 86, 90, 86, 8);
-  g.fillRoundedRect(x + 948, FLOOR_Y - 128, 74, 50, 8);
+  g.fillRoundedRect(x + 980, FLOOR_Y - 86, 90, 86, 8);
+  g.fillRoundedRect(x + 988, FLOOR_Y - 128, 74, 50, 8);
 }
 
 function furnitureLanding(g: G, r: BakedRoom): void {
@@ -461,56 +467,74 @@ function drawVaultSofa(g: G, worldX: number, obs: Extract<Obstacle, { kind: "vau
   const x = worldX + obs.x;
   const h = obs.h;
   const w = obs.w;
+  // Solid waist-high body across the FULL walk line — no cushion gap to walk through.
+  g.fillStyle(0x2a1c18, 1);
+  g.fillRect(x - 2, FLOOR_Y - 10, w + 4, 10);
   g.fillStyle(0x3a2a28, 1);
-  g.fillRoundedRect(x, FLOOR_Y - h, w, h, 10);
+  g.fillRoundedRect(x, FLOOR_Y - h, w, h, 8);
+  // Continuous top cushion / lid (one piece)
   g.fillStyle(0x2e2220, 1);
-  g.fillRoundedRect(x + 8, FLOOR_Y - h - 28, w * 0.34, 32, 8);
-  g.fillRoundedRect(x + w * 0.58, FLOOR_Y - h - 28, w * 0.34, 32, 8);
-  g.fillStyle(0x241818, 0.9);
-  g.fillRect(x + 4, FLOOR_Y - 14, w - 8, 14);
-  // subtle highlight so it reads as a blocker
-  g.fillStyle(0xc8b090, 0.08);
-  g.fillRoundedRect(x + 10, FLOOR_Y - h + 8, w - 20, 18, 6);
+  g.fillRoundedRect(x + 4, FLOOR_Y - h - 20, w - 8, 26, 7);
+  g.fillStyle(0x241818, 1);
+  g.fillRect(x + 6, FLOOR_Y - 16, w - 12, 16);
+  // Front edge highlight — reads as a hard blocker
+  g.fillStyle(0xc8b090, 0.14);
+  g.fillRect(x + 8, FLOOR_Y - h + 6, w - 16, 5);
+  g.lineStyle(2, 0x100c0a, 0.55);
+  g.strokeRoundedRect(x + 1, FLOOR_Y - h + 1, w - 2, h - 2, 7);
 }
 
 function drawCrawlBeam(g: G, worldX: number, obs: Extract<Obstacle, { kind: "crawl" }>): void {
   const x = worldX + obs.x;
   const clear = obs.clearance;
   const w = obs.w;
-  // Heavy beam / half-closed shutter hanging low
+  // Heavy beam / half-closed shutter hanging low — solid above, lit mouth below.
   g.fillStyle(C.woodDeep, 1);
-  g.fillRect(x - 10, CEILING_Y, w + 20, 18);
+  g.fillRect(x - 14, CEILING_Y, w + 28, 22);
   g.fillStyle(C.wood, 1);
-  g.fillRect(x, CEILING_Y + 14, w, FLOOR_Y - clear - (CEILING_Y + 14));
+  g.fillRect(x, CEILING_Y + 16, w, FLOOR_Y - clear - (CEILING_Y + 16));
+  // Bottom lip of the beam (reads as the clearance edge)
   g.fillStyle(C.woodDark, 1);
-  g.fillRect(x, FLOOR_Y - clear - 14, w, 14);
-  g.fillStyle(C.trim, 0.85);
-  g.fillRect(x + 8, CEILING_Y + 28, 8, FLOOR_Y - clear - CEILING_Y - 50);
-  g.fillRect(x + w - 16, CEILING_Y + 28, 8, FLOOR_Y - clear - CEILING_Y - 50);
-  // open crawl mouth
-  g.fillStyle(0x080604, 0.55);
-  g.fillRect(x + 6, FLOOR_Y - clear, w - 12, clear);
-  g.fillStyle(0xc8b090, 0.07);
-  g.fillRect(x + 10, FLOOR_Y - clear + 4, w - 20, 10);
+  g.fillRect(x - 4, FLOOR_Y - clear - 16, w + 8, 16);
+  g.fillStyle(C.trimLite, 0.95);
+  g.fillRect(x - 2, FLOOR_Y - clear - 6, w + 4, 6);
+  g.fillStyle(C.trim, 0.9);
+  g.fillRect(x + 10, CEILING_Y + 30, 10, FLOOR_Y - clear - CEILING_Y - 54);
+  g.fillRect(x + w - 20, CEILING_Y + 30, 10, FLOOR_Y - clear - CEILING_Y - 54);
+  // Crawl mouth: darker recess with a warm lip so the opening is obvious
+  g.fillStyle(0x060402, 0.72);
+  g.fillRect(x + 4, FLOOR_Y - clear, w - 8, clear);
+  g.fillStyle(0xe8d4a8, 0.16);
+  g.fillRect(x + 10, FLOOR_Y - clear + 2, w - 20, 12);
+  g.fillStyle(0x000000, 0.35);
+  g.fillRect(x + 16, FLOOR_Y - clear + 18, w - 32, clear - 22);
 }
 
 function drawFloorGap(g: G, worldX: number, obs: Extract<Obstacle, { kind: "gap" }>): void {
   const x = worldX + obs.x;
   const w = obs.w;
-  // Dark pit / broken boards
-  g.fillStyle(0x060504, 1);
-  g.fillRect(x, FLOOR_Y - 2, w, GAME_H - FLOOR_Y + 2);
-  g.fillGradientStyle(0x0c1014, 0x0c1014, 0x1a2830, 0x1a2830, 1, 1, 0.7, 0.7);
-  g.fillRect(x + 4, FLOOR_Y + 8, w - 8, 40);
-  // jagged board edges
+  // Deep dark pit — not a floor stain
+  g.fillStyle(0x030201, 1);
+  g.fillRect(x, FLOOR_Y - 4, w, GAME_H - FLOOR_Y + 4);
+  g.fillGradientStyle(0x080c10, 0x080c10, 0x152028, 0x152028, 1, 1, 0.85, 0.85);
+  g.fillRect(x + 3, FLOOR_Y + 6, w - 6, 52);
+  g.fillStyle(0x000000, 0.55);
+  g.fillRect(x + 10, FLOOR_Y + 40, w - 20, 36);
+  // Broken / jagged floorboards on both lips
+  g.fillStyle(C.woodDeep, 1);
+  g.fillRect(x - 16, FLOOR_Y - 12, 20, 16);
+  g.fillRect(x + w - 4, FLOOR_Y - 12, 20, 16);
   g.fillStyle(C.woodDark, 1);
-  g.fillRect(x - 10, FLOOR_Y - 8, 14, 12);
-  g.fillRect(x + w - 4, FLOOR_Y - 8, 14, 12);
+  g.fillTriangle(x - 8, FLOOR_Y - 12, x + 22, FLOOR_Y - 12, x - 8, FLOOR_Y + 10);
+  g.fillTriangle(x + 8, FLOOR_Y - 4, x + 36, FLOOR_Y - 10, x + 14, FLOOR_Y + 8);
+  g.fillTriangle(x + w + 8, FLOOR_Y - 12, x + w - 24, FLOOR_Y - 12, x + w + 8, FLOOR_Y + 10);
+  g.fillTriangle(x + w - 10, FLOOR_Y - 4, x + w - 38, FLOOR_Y - 10, x + w - 16, FLOOR_Y + 8);
   g.fillStyle(C.woodMid, 1);
-  g.fillTriangle(x - 4, FLOOR_Y - 8, x + 18, FLOOR_Y - 8, x - 4, FLOOR_Y + 6);
-  g.fillTriangle(x + w + 4, FLOOR_Y - 8, x + w - 18, FLOOR_Y - 8, x + w + 4, FLOOR_Y + 6);
-  g.fillStyle(0x8ab0c0, 0.12);
-  g.fillEllipse(x + w * 0.5, FLOOR_Y + 28, w * 0.7, 12);
+  g.fillRect(x - 18, FLOOR_Y - 8, 12, 6);
+  g.fillRect(x + w + 4, FLOOR_Y - 8, 12, 6);
+  // faint wet glint at the bottom — still reads as a hole
+  g.fillStyle(0x6a90a0, 0.1);
+  g.fillEllipse(x + w * 0.5, FLOOR_Y + 36, w * 0.55, 10);
 }
 
 function drawClosingDoorFrame(g: G, worldX: number, obs: Extract<Obstacle, { kind: "closingDoor" }>): void {
@@ -527,12 +551,54 @@ function drawClosingDoorFrame(g: G, worldX: number, obs: Extract<Obstacle, { kin
   g.fillRect(x - 4, 186, openW + 8, 6);
 }
 
+function drawVaultChest(g: G, worldX: number, obs: Extract<Obstacle, { kind: "vault" }>): void {
+  const x = worldX + obs.x;
+  const h = obs.h;
+  const w = obs.w;
+  g.fillStyle(C.woodDeep, 1);
+  g.fillRect(x - 2, FLOOR_Y - 8, w + 4, 8);
+  g.fillStyle(C.wood, 1);
+  g.fillRoundedRect(x, FLOOR_Y - h, w, h, 4);
+  g.fillStyle(C.woodDark, 1);
+  g.fillRect(x + 6, FLOOR_Y - h + 10, w - 12, 8);
+  g.fillRect(x + 6, FLOOR_Y - 28, w - 12, 8);
+  g.fillStyle(C.trim, 1);
+  g.fillCircle(x + w * 0.5, FLOOR_Y - h * 0.55, 5);
+  g.fillStyle(0xc8b090, 0.12);
+  g.fillRect(x + 8, FLOOR_Y - h + 4, w - 16, 5);
+  g.lineStyle(2, 0x100c0a, 0.5);
+  g.strokeRoundedRect(x + 1, FLOOR_Y - h + 1, w - 2, h - 2, 3);
+}
+
+function drawVaultCabinet(g: G, worldX: number, obs: Extract<Obstacle, { kind: "vault" }>): void {
+  const x = worldX + obs.x;
+  const h = obs.h;
+  const w = obs.w;
+  // Fallen cabinet on its side — solid across the walk.
+  g.fillStyle(C.woodDark, 1);
+  g.fillRect(x - 4, FLOOR_Y - 10, w + 8, 10);
+  g.fillStyle(C.woodMid, 1);
+  g.fillRoundedRect(x, FLOOR_Y - h, w, h, 3);
+  g.fillStyle(C.wood, 1);
+  g.fillRect(x + 8, FLOOR_Y - h + 8, w - 16, h - 20);
+  g.lineStyle(2, C.woodDeep, 0.7);
+  g.strokeRect(x + 12, FLOOR_Y - h + 14, (w - 28) * 0.5 - 4, h - 36);
+  g.strokeRect(x + w * 0.5 + 2, FLOOR_Y - h + 14, (w - 28) * 0.5 - 4, h - 36);
+  g.fillStyle(C.metalLite, 0.8);
+  g.fillCircle(x + w * 0.32, FLOOR_Y - h * 0.5, 3);
+  g.fillCircle(x + w * 0.68, FLOOR_Y - h * 0.5, 3);
+  g.fillStyle(0xc8b090, 0.1);
+  g.fillRect(x + 6, FLOOR_Y - h + 3, w - 12, 4);
+}
+
 function drawObstacles(g: G, room: BakedRoom): void {
   const list = room.obstacles ?? [];
   for (const obs of list) {
     switch (obs.kind) {
       case "vault":
-        drawVaultSofa(g, room.worldX, obs);
+        if (room.kind === "foyer" || room.kind === "cross") drawVaultChest(g, room.worldX, obs);
+        else if (room.kind === "storm") drawVaultCabinet(g, room.worldX, obs);
+        else drawVaultSofa(g, room.worldX, obs);
         break;
       case "crawl":
         drawCrawlBeam(g, room.worldX, obs);

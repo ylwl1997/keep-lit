@@ -9,7 +9,7 @@ export const WALK_SPEED = 148;
 export const CUP_SPEED_MUL = 0.64;
 export const SPRINT_MUL = 1.62;
 export const CRAWL_MUL = 0.5;
-export const JUMP_V0 = 460;
+export const JUMP_V0 = 500;
 export const GRAVITY = 1280;
 export const VAULT_DURATION = 0.42;
 export const VAULT_HEIGHT = 78;
@@ -20,9 +20,11 @@ export const STAND_HEAD = 148;
 export const FLAME_MAX = 100;
 export const RECOVER_RATE = 26;
 export const CALM_THRESHOLD = 0.06;
-export const FAIL_BEAT = 0.36;
-export const RUN_TIME = 88;
-export const DEV_ROOM_TIME_FLOOR = 42;
+/** Fail banner hold so score under it is readable. */
+export const FAIL_BEAT = 1.05;
+/** Scoring reference only — not a fail line. */
+export const SCORE_TIME_REF = 90;
+export const BEST_SCORE_KEY = "keep-lit-best-score";
 export const FONT = 'Georgia, "Palatino Linotype", Palatino, "Times New Roman", serif';
 export const UI_FONT = "system-ui, 'Segoe UI', sans-serif";
 

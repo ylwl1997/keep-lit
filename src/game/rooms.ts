@@ -129,12 +129,16 @@ export const ROOM_DEFS: RoomDef[] = [
     width: 980,
     kind: "foyer",
     hazards: [{ kind: "draft", x: 500, w: 300, strength: 0.32, dir: RIGHT }],
+    // Short cup-teach stretch, then a solid chest/table across the walk line.
+    obstacles: [{ kind: "vault", x: 500, w: 140, h: 82 }],
   },
   {
     name: "Hall Draft",
     width: 1080,
     kind: "hall",
     hazards: [{ kind: "draft", x: 40, w: 980, strength: 0.48, dir: RIGHT }],
+    // Mid-hall low shutter / beam — crawl is stable, standing blocked.
+    obstacles: [{ kind: "crawl", x: 470, w: 200, clearance: 76 }],
   },
   {
     name: "Front Door",
@@ -155,6 +159,8 @@ export const ROOM_DEFS: RoomDef[] = [
         linger: 0.2,
       },
     ],
+    // Broken threshold past the open door — jump while the gust is still alive.
+    obstacles: [{ kind: "gap", x: 520, w: 118 }],
   },
   {
     name: "Fan Room",
@@ -171,8 +177,8 @@ export const ROOM_DEFS: RoomDef[] = [
         sweep: 1.12,
       },
     ],
-    // Mid-path sofa: must vault; fan exposure during vault is the tradeoff.
-    obstacles: [{ kind: "vault", x: 430, w: 120, h: 82 }],
+    // Only sofa on the walk line — must vault; fan exposure is the tradeoff.
+    obstacles: [{ kind: "vault", x: 430, w: 132, h: 84 }],
   },
   {
     name: "Curtain Corridor",
@@ -190,8 +196,8 @@ export const ROOM_DEFS: RoomDef[] = [
         phase: 0.1,
       },
     ],
-    // Low beam / half-dropped shutter: standing blocked, crawl clears.
-    obstacles: [{ kind: "crawl", x: 520, w: 200, clearance: 78 }],
+    // Heavy beam with a clear crawl mouth.
+    obstacles: [{ kind: "crawl", x: 520, w: 210, clearance: 78 }],
   },
   {
     name: "Kitchen Door",
@@ -228,8 +234,8 @@ export const ROOM_DEFS: RoomDef[] = [
     width: 1140,
     kind: "leaky",
     hazards: [{ kind: "rain", x: 260, w: 640, strength: 0.62 }],
-    // Broken boards / wide puddle gap — must jump.
-    obstacles: [{ kind: "gap", x: 470, w: 78 }],
+    // Wide broken-board pit — must jump.
+    obstacles: [{ kind: "gap", x: 460, w: 124 }],
   },
   {
     name: "Cross Breeze",
@@ -240,14 +246,16 @@ export const ROOM_DEFS: RoomDef[] = [
       { kind: "draft", x: 500, w: 520, strength: 0.5, dir: LEFT },
       { kind: "draft", x: 480, w: 220, strength: 0.28, dir: UP },
     ],
+    // Chest across the crossing drafts — exposed while vaulting.
+    obstacles: [{ kind: "vault", x: 530, w: 128, h: 80 }],
   },
   {
     name: "Attic Vent",
     width: 1000,
     kind: "attic",
     hazards: [{ kind: "vent", x: 360, w: 300, strength: 0.7 }],
-    // Low soffit / stacked crates arch — reinforce crawl under drafts.
-    obstacles: [{ kind: "crawl", x: 400, w: 160, clearance: 82 }],
+    // Low soffit under the vent — crawl through the mouth.
+    obstacles: [{ kind: "crawl", x: 390, w: 180, clearance: 80 }],
   },
   {
     name: "Stairwell",
@@ -257,8 +265,8 @@ export const ROOM_DEFS: RoomDef[] = [
       { kind: "chimney", x: 60, w: 500, strength: 0.7, dir: CHIMNEY_DIR },
       { kind: "chimney", x: 800, w: 620, strength: 0.76, dir: CHIMNEY_DIR },
     ],
-    // Missing floorboards on the walk — second jump.
-    obstacles: [{ kind: "gap", x: 700, w: 74 }],
+    // Wide missing boards after the mid landing.
+    obstacles: [{ kind: "gap", x: 880, w: 122 }],
   },
   {
     name: "Storm Window",
@@ -276,6 +284,8 @@ export const ROOM_DEFS: RoomDef[] = [
         phase: 0.2,
       },
     ],
+    // Fallen cabinet in the gust — one house-fitting gate, not a rhythm rail.
+    obstacles: [{ kind: "vault", x: 560, w: 136, h: 86 }],
   },
   {
     name: "Quiet Landing",
@@ -305,4 +315,9 @@ export function roomAt(rooms: BakedRoom[], worldX: number): BakedRoom {
     if (worldX >= rooms[i].worldX) return rooms[i];
   }
   return rooms[0];
+}
+
+/** Stable id for scoring a successful clear once per run. */
+export function obstacleId(roomIndex: number, obs: Obstacle): string {
+  return `${roomIndex}:${obs.kind}:${Math.round(obs.x)}`;
 }
