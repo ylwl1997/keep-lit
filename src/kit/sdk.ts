@@ -27,7 +27,7 @@ declare global {
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-function noop(environment: SdkEnvironment): GameSdk {
+export function noopSdk(environment: SdkEnvironment): GameSdk {
   const ignore = () => undefined;
   return {
     environment,
@@ -49,9 +49,9 @@ function isCrazyGamesHost(hostname: string): boolean {
 }
 
 /**
- * Skip the official 7s parent handshake when the game is opened top-level on
- * our own domain (workers.dev, a custom site). Always init inside an iframe,
- * on localhost / 127.0.0.1, or on a CrazyGames host.
+ * Skip the official parent handshake when the game is opened top-level on
+ * our own domain (GitHub Pages, workers.dev, a custom site). Always init
+ * inside an iframe, on 127.0.0.1, or on a CrazyGames host.
  */
 export function shouldInitCrazyGamesSdk(): boolean {
   if (typeof window === "undefined") return false;
@@ -73,24 +73,48 @@ function wrap(fn: () => void): () => void {
   };
 }
 
+function waitForSdk(maxMs: number): Promise<CrazyGamesSdk | null> {
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const tick = () => {
+      const sdk = window.CrazyGames?.SDK;
+      if (sdk) {
+        resolve(sdk);
+        return;
+      }
+      if (Date.now() - started >= maxMs) {
+        resolve(null);
+        return;
+      }
+      window.setTimeout(tick, 40);
+    };
+    tick();
+  });
+}
+
+/**
+ * Never throws. Top-level sites that are not CrazyGames resolve immediately
+ * as disabled. A missing or hung SDK resolves as missing so the game can boot.
+ */
 export async function initGameSdk(): Promise<GameSdk> {
-  const sdk = window.CrazyGames?.SDK;
-  if (!sdk) return noop("missing");
-  if (!shouldInitCrazyGamesSdk()) return noop("disabled");
+  if (!shouldInitCrazyGamesSdk()) return noopSdk("disabled");
+
+  const sdk = await waitForSdk(700);
+  if (!sdk) return noopSdk("missing");
 
   try {
     await Promise.race([
       sdk.init(),
       new Promise<never>((_, reject) => {
-        window.setTimeout(() => reject(new Error("CrazyGames SDK init timed out")), 8000);
+        window.setTimeout(() => reject(new Error("CrazyGames SDK init timed out")), 1200);
       }),
     ]);
   } catch {
-    return noop("disabled");
+    return noopSdk("missing");
   }
 
   if (sdk.environment !== "local" && sdk.environment !== "crazygames") {
-    return noop("disabled");
+    return noopSdk("disabled");
   }
 
   return {
