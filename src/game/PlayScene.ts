@@ -2,8 +2,11 @@ import Phaser from "phaser";
 import type { GameSdk } from "../kit/sdk";
 import {
   C,
-  CEILING_Y,
+  CRAWL_CHEST,
+  CRAWL_HEAD,
+  CRAWL_MUL,
   CUP_SPEED_MUL,
+  DEV_ROOM_TIME_FLOOR,
   EXIT_MARGIN,
   FAIL_BEAT,
   FLAME_MAX,
@@ -11,12 +14,26 @@ import {
   FONT,
   GAME_H,
   GAME_W,
+  GRAVITY,
+  JUMP_V0,
+  RUN_TIME,
+  SPRINT_MUL,
+  STAND_CHEST,
+  STAND_HEAD,
   START_OFFSET,
   UI_FONT,
+  VAULT_DURATION,
+  VAULT_HEIGHT,
   WALK_SPEED,
 } from "./constants";
 import { drawStaticHouse } from "./drawHouse";
-import { bakeHouse, roomAt, type BakedRoom, type HouseLayout } from "./rooms";
+import {
+  bakeHouse,
+  roomAt,
+  type BakedRoom,
+  type HouseLayout,
+  type Obstacle,
+} from "./rooms";
 import {
   fanAngle,
   flameDelta,
@@ -29,6 +46,7 @@ import {
 } from "./wind";
 
 type Mode = "title" | "playing" | "failing" | "won";
+type FailReason = "flame" | "time" | "door";
 
 type Particle = {
   x: number;
@@ -42,11 +60,22 @@ type Particle = {
   kind: "dust" | "streak" | "drip" | "ember" | "puff";
 };
 
+type TouchBtn = {
+  id: "cup" | "jump" | "crawl" | "run";
+  label: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  held: boolean;
+  zone: Phaser.GameObjects.Zone;
+  gfx: Phaser.GameObjects.Graphics;
+  text: Phaser.GameObjects.Text;
+};
+
 const BLOCKED_KEYS = new Set([
   "Tab",
   "Escape",
-  "ShiftLeft",
-  "ShiftRight",
   "ControlLeft",
   "ControlRight",
   "AltLeft",
@@ -60,8 +89,14 @@ const BLOCKED_KEYS = new Set([
   "PrintScreen",
 ]);
 
+const CUP_KEYS = new Set(["Space", "KeyF"]);
+const JUMP_KEYS = new Set(["KeyW", "ArrowUp"]);
+const CRAWL_KEYS = new Set(["KeyS", "ArrowDown"]);
+const SPRINT_KEYS = new Set(["ShiftLeft", "ShiftRight"]);
+const GAME_KEYS = new Set([...CUP_KEYS, ...JUMP_KEYS, ...CRAWL_KEYS, ...SPRINT_KEYS, "Enter"]);
+
 function isBlockedKey(code: string): boolean {
-  return BLOCKED_KEYS.has(code) || code.startsWith("F") && code.length <= 4;
+  return BLOCKED_KEYS.has(code) || (code.startsWith("F") && code.length <= 4 && code !== "KeyF");
 }
 
 function flicker(t: number, seed: number): number {
@@ -77,17 +112,32 @@ export class PlayScene extends Phaser.Scene {
   private house!: HouseLayout;
   private mode: Mode = "title";
   private playerX = 0;
+  private playerAir = 0;
+  private playerVy = 0;
   private flame = FLAME_MAX;
   private attempts = 0;
   private failTimer = 0;
+  private failReason: FailReason = "flame";
   private gusts: GustState = {};
   private particles: Particle[] = [];
   private keysHeld = new Set<string>();
-  private pointerHeld = false;
+  private cupPointer = false;
+  private uiBlockPointer = false;
   private leanX = 0;
   private leanY = 0;
   private walkPhase = 0;
   private spawnAcc = 0;
+  private timeLeft = RUN_TIME;
+  private crawling = false;
+  private sprinting = false;
+  private vaulting = false;
+  private vaultT = 0;
+  private vaultFromX = 0;
+  private vaultToX = 0;
+  private doorTimers: Record<string, number | null> = {};
+  private touchBtns: TouchBtn[] = [];
+  private hintText!: Phaser.GameObjects.Text;
+  private timerText!: Phaser.GameObjects.Text;
 
   private worldGfx!: Phaser.GameObjects.Graphics;
   private dynGfx!: Phaser.GameObjects.Graphics;
@@ -138,31 +188,49 @@ export class PlayScene extends Phaser.Scene {
       align: "center" as const,
     };
     this.titleText = this.add
-      .text(GAME_W * 0.5, 168, "Keep Lit", titleStyle)
+      .text(GAME_W * 0.5, 150, "Keep Lit", titleStyle)
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(22)
       .setShadow(0, 10, "#000000", 18, true, true);
     this.taglineText = this.add
-      .text(GAME_W * 0.5, 262, "Hold to cup the flame. Release to let it breathe.", {
-        fontFamily: FONT,
-        fontSize: "26px",
-        color: C.textDim,
-        align: "center",
-      })
+      .text(
+        GAME_W * 0.5,
+        242,
+        "Hold to cup the flame. Jump, vault, crawl, or run when the house demands it.",
+        {
+          fontFamily: FONT,
+          fontSize: "22px",
+          color: C.textDim,
+          align: "center",
+          wordWrap: { width: 920 },
+        },
+      )
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(22);
-    this.promptText = this.add
-      .text(GAME_W * 0.5, 330, "Press to begin", {
-        fontFamily: FONT,
-        fontSize: "20px",
+    this.hintText = this.add
+      .text(GAME_W * 0.5, 292, "Cup  Space/F   ·   Jump/Vault  W/↑   ·   Crawl  S/↓   ·   Run  Shift", {
+        fontFamily: UI_FONT,
+        fontSize: "14px",
         color: C.textMute,
         align: "center",
       })
       .setOrigin(0.5)
       .setScrollFactor(0)
-      .setDepth(22);
+      .setDepth(22)
+      .setAlpha(0.55);
+    this.promptText = this.add
+      .text(GAME_W * 0.5, 340, "Press to begin", {
+        fontFamily: FONT,
+        fontSize: "22px",
+        color: C.textDim,
+        align: "center",
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(22)
+      .setShadow(0, 4, "#000000", 10, true, true);
     this.bannerText = this.add
       .text(GAME_W * 0.5, 300, "", {
         fontFamily: FONT,
@@ -205,10 +273,92 @@ export class PlayScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(22)
       .setAlpha(0);
+    this.timerText = this.add
+      .text(GAME_W * 0.5, 52, "", {
+        fontFamily: UI_FONT,
+        fontSize: "18px",
+        color: C.textDim,
+      })
+      .setOrigin(0.5, 0)
+      .setScrollFactor(0)
+      .setDepth(22)
+      .setAlpha(0);
 
+    this.buildTouchControls();
     this.bindInput();
+    this.setTouchVisible(false);
     this.sdk.loadingStop();
     if (import.meta.env.DEV && this.devRoomIndex() !== null) this.beginRun();
+  }
+
+  private buildTouchControls(): void {
+    const layout: Array<Omit<TouchBtn, "held" | "zone" | "gfx" | "text">> = [
+      { id: "cup", label: "Cup", x: 36, y: GAME_H - 118, w: 168, h: 86 },
+      { id: "jump", label: "Jump", x: GAME_W - 372, y: GAME_H - 118, w: 104, h: 86 },
+      { id: "crawl", label: "Crawl", x: GAME_W - 252, y: GAME_H - 118, w: 104, h: 86 },
+      { id: "run", label: "Run", x: GAME_W - 132, y: GAME_H - 118, w: 100, h: 86 },
+    ];
+    for (const spec of layout) {
+      const gfx = this.add.graphics().setScrollFactor(0).setDepth(24);
+      const text = this.add
+        .text(spec.x + spec.w * 0.5, spec.y + spec.h * 0.5, spec.label, {
+          fontFamily: UI_FONT,
+          fontSize: "18px",
+          color: C.text,
+        })
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(25);
+      const zone = this.add
+        .zone(spec.x + spec.w * 0.5, spec.y + spec.h * 0.5, spec.w, spec.h)
+        .setScrollFactor(0)
+        .setDepth(26)
+        .setInteractive();
+      const btn: TouchBtn = { ...spec, held: false, zone, gfx, text };
+      zone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+        pointer.event?.preventDefault?.();
+        this.uiBlockPointer = true;
+        btn.held = true;
+        if (btn.id === "jump") this.tryJumpOrVault();
+        if (this.mode === "title" || this.mode === "won") this.beginRun();
+        this.paintTouchBtn(btn);
+      });
+      const release = () => {
+        btn.held = false;
+        this.paintTouchBtn(btn);
+        if (!this.touchBtns.some((b) => b.held)) this.uiBlockPointer = false;
+      };
+      zone.on("pointerup", release);
+      zone.on("pointerout", release);
+      zone.on("pointerupoutside", release);
+      this.touchBtns.push(btn);
+      this.paintTouchBtn(btn);
+    }
+  }
+
+  private paintTouchBtn(btn: TouchBtn): void {
+    const g = btn.gfx;
+    g.clear();
+    const active = btn.held;
+    g.fillStyle(0x000000, active ? 0.55 : 0.38);
+    g.fillRoundedRect(btn.x, btn.y, btn.w, btn.h, 14);
+    g.lineStyle(2, active ? C.flame : 0x6a5640, active ? 0.85 : 0.45);
+    g.strokeRoundedRect(btn.x + 1, btn.y + 1, btn.w - 2, btn.h - 2, 13);
+    btn.text.setAlpha(active ? 1 : 0.82);
+  }
+
+  private setTouchVisible(on: boolean): void {
+    for (const btn of this.touchBtns) {
+      btn.gfx.setVisible(on);
+      btn.text.setVisible(on);
+      btn.zone.setVisible(on).setActive(on);
+      if (!on) btn.held = false;
+    }
+    if (!on) this.uiBlockPointer = false;
+  }
+
+  private touchHeld(id: TouchBtn["id"]): boolean {
+    return this.touchBtns.some((b) => b.id === id && b.held);
   }
 
   private devRoomIndex(): number | null {
@@ -220,85 +370,390 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private bindInput(): void {
-    this.input.on("pointerdown", () => {
-      this.pointerHeld = true;
+    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      if (this.uiBlockPointer) return;
+      // Cup only when not pressing an on-screen verb button.
+      if (this.hitTouchBtn(pointer.x, pointer.y)) return;
+      this.cupPointer = true;
       this.onPress();
     });
     this.input.on("pointerup", () => {
-      this.pointerHeld = false;
+      this.cupPointer = false;
     });
     this.input.on("pointerupoutside", () => {
-      this.pointerHeld = false;
+      this.cupPointer = false;
     });
     this.input.keyboard?.on("keydown", (event: KeyboardEvent) => {
       if (isBlockedKey(event.code)) return;
-      if (event.repeat) {
+      if (GAME_KEYS.has(event.code) || CUP_KEYS.has(event.code) || JUMP_KEYS.has(event.code)) {
         event.preventDefault();
+      }
+      if (event.repeat) {
+        if (GAME_KEYS.has(event.code)) event.preventDefault();
         return;
       }
-      event.preventDefault();
+      if (GAME_KEYS.has(event.code) || !isBlockedKey(event.code)) {
+        // Track cup / crawl / sprint / jump keys; ignore pure modifiers already filtered.
+      }
       this.keysHeld.add(event.code);
-      this.onPress();
+      if (JUMP_KEYS.has(event.code)) {
+        event.preventDefault();
+        this.tryJumpOrVault();
+      }
+      if (
+        CUP_KEYS.has(event.code) ||
+        JUMP_KEYS.has(event.code) ||
+        CRAWL_KEYS.has(event.code) ||
+        SPRINT_KEYS.has(event.code) ||
+        event.code === "Enter"
+      ) {
+        event.preventDefault();
+        this.onPress();
+      }
     });
     this.input.keyboard?.on("keyup", (event: KeyboardEvent) => {
       this.keysHeld.delete(event.code);
     });
     this.game.events.on(Phaser.Core.Events.BLUR, () => {
       this.keysHeld.clear();
-      this.pointerHeld = false;
+      this.cupPointer = false;
+      for (const b of this.touchBtns) b.held = false;
+      this.uiBlockPointer = false;
     });
   }
 
-  private cupped(): boolean {
-    return this.pointerHeld || this.keysHeld.size > 0;
+  private hitTouchBtn(x: number, y: number): boolean {
+    return this.touchBtns.some(
+      (b) => b.zone.visible && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h,
+    );
+  }
+
+  private wantsCup(): boolean {
+    if (this.vaulting) return false;
+    if (this.cupPointer) return true;
+    if (this.touchHeld("cup")) return true;
+    for (const code of this.keysHeld) {
+      if (CUP_KEYS.has(code)) return true;
+    }
+    return false;
+  }
+
+  private wantsCrawl(): boolean {
+    if (this.vaulting || this.playerAir > 2) return false;
+    if (this.touchHeld("crawl")) return true;
+    for (const code of this.keysHeld) {
+      if (CRAWL_KEYS.has(code)) return true;
+    }
+    return false;
+  }
+
+  private wantsSprint(): boolean {
+    if (this.crawling || this.vaulting || this.playerAir > 2) return false;
+    if (this.touchHeld("run")) return true;
+    for (const code of this.keysHeld) {
+      if (SPRINT_KEYS.has(code)) return true;
+    }
+    return false;
   }
 
   private onPress(): void {
     if (this.mode === "title" || this.mode === "won") this.beginRun();
   }
 
+  private startLocalX(room: BakedRoom): number {
+    const door = room.obstacles?.find(
+      (obs): obs is Extract<Obstacle, { kind: "closingDoor" }> => obs.kind === "closingDoor",
+    );
+    if (door) return Math.max(24, Math.min(START_OFFSET, door.triggerX - 40));
+    return Math.min(START_OFFSET, room.width * 0.35);
+  }
+
   private beginRun(): void {
+
     this.attempts += 1;
     this.mode = "playing";
     const jump = this.devRoomIndex();
     const startRoom = jump === null ? this.house.rooms[0] : this.house.rooms[jump];
-    this.playerX = startRoom.worldX + Math.min(START_OFFSET, startRoom.width * 0.35);
+    this.playerX = startRoom.worldX + this.startLocalX(startRoom);
+    this.playerAir = 0;
+    this.playerVy = 0;
     this.flame = FLAME_MAX;
     this.failTimer = 0;
+    this.failReason = "flame";
     this.gusts = {};
     this.particles = [];
     this.leanX = 0;
     this.leanY = 0;
     this.walkPhase = 0;
+    this.crawling = false;
+    this.sprinting = false;
+    this.vaulting = false;
+    this.vaultT = 0;
+    this.doorTimers = {};
+
+    if (jump === null) {
+      this.timeLeft = RUN_TIME;
+    } else {
+      const remaining = Math.max(200, this.house.width - this.playerX);
+      const full = Math.max(1, this.house.width - START_OFFSET);
+      this.timeLeft = Math.max(DEV_ROOM_TIME_FLOOR, RUN_TIME * (remaining / full) + 8);
+    }
+
     this.follower.setPosition(this.playerX, FLOOR_Y - 90);
     this.cameras.main.centerOn(this.playerX + 240, GAME_H * 0.5);
     this.titleText.setAlpha(0);
     this.taglineText.setAlpha(0);
+    this.hintText.setAlpha(0);
     this.promptText.setAlpha(0);
     this.bannerText.setAlpha(0);
     this.bannerSub.setAlpha(0);
     this.roomText.setAlpha(1);
     this.attemptText.setAlpha(1);
+    this.timerText.setAlpha(1);
+    this.setTouchVisible(true);
     this.sdk.gameplayStart();
+  }
+
+  private chestY(): number {
+    if (this.vaulting) return FLOOR_Y - VAULT_HEIGHT - 20 + this.playerAir;
+    if (this.crawling) return FLOOR_Y - CRAWL_CHEST + this.playerAir;
+    return FLOOR_Y - STAND_CHEST - this.playerAir;
+  }
+
+  private headClearance(): number {
+    if (this.crawling) return CRAWL_HEAD;
+    if (this.vaulting) return VAULT_HEIGHT + 24;
+    return STAND_HEAD + this.playerAir;
+  }
+
+  private tryJumpOrVault(): void {
+    if (this.mode !== "playing") return;
+    if (this.vaulting || this.crawling) return;
+    if (this.playerAir > 4) return;
+    const vault = this.findVaultInRange();
+    if (vault) {
+      this.startVault(vault.room, vault.obs);
+      return;
+    }
+    this.playerVy = JUMP_V0;
+    this.playerAir = Math.max(this.playerAir, 2);
+  }
+
+  private findVaultInRange(): { room: BakedRoom; obs: Extract<Obstacle, { kind: "vault" }> } | null {
+    for (const room of this.house.rooms) {
+      for (const obs of room.obstacles ?? []) {
+        if (obs.kind !== "vault") continue;
+        const left = room.worldX + obs.x;
+        // Approach from the left within a short window.
+        if (this.playerX >= left - 70 && this.playerX <= left + 18) {
+          return { room, obs };
+        }
+        // Already overlapping — still allow vault if not past midpoint.
+        if (this.playerX > left && this.playerX < left + obs.w * 0.45) {
+          return { room, obs };
+        }
+      }
+    }
+    return null;
+  }
+
+  private startVault(room: BakedRoom, obs: Extract<Obstacle, { kind: "vault" }>): void {
+    this.vaulting = true;
+    this.vaultT = 0;
+    this.vaultFromX = this.playerX;
+    this.vaultToX = room.worldX + obs.x + obs.w + 18;
+    this.playerVy = 0;
+    this.crawling = false;
+    this.sprinting = false;
+  }
+
+  private moveAndCollide(dt: number, held: boolean): void {
+    if (this.vaulting) {
+      this.vaultT += dt;
+      const u = Math.min(1, this.vaultT / VAULT_DURATION);
+      const ease = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+      this.playerX = Phaser.Math.Linear(this.vaultFromX, this.vaultToX, ease);
+      this.playerAir = Math.sin(u * Math.PI) * (VAULT_HEIGHT + 18);
+      if (u >= 1) {
+        this.vaulting = false;
+        this.playerAir = 0;
+        this.playerVy = 0;
+        this.playerX = this.vaultToX;
+      }
+      this.walkPhase += 10 * dt;
+      return;
+    }
+
+    this.crawling = this.wantsCrawl();
+    this.sprinting = !this.crawling && this.wantsSprint();
+
+    let speedMul = 1;
+    if (this.crawling) speedMul = CRAWL_MUL;
+    else if (this.sprinting) speedMul = SPRINT_MUL;
+    else if (held) speedMul = CUP_SPEED_MUL;
+
+    const speed = WALK_SPEED * speedMul;
+    let nextX = this.playerX + speed * dt;
+
+    // Vertical: jump arc
+    if (this.playerAir > 0 || this.playerVy > 0) {
+      this.playerVy -= GRAVITY * dt;
+      this.playerAir += this.playerVy * dt;
+      if (this.playerAir <= 0) {
+        this.playerAir = 0;
+        this.playerVy = 0;
+      }
+    }
+
+    nextX = this.resolveBlockers(this.playerX, nextX);
+    this.playerX = Math.min(this.house.width - EXIT_MARGIN + 8, nextX);
+    this.walkPhase += speed * dt * (this.sprinting ? 0.11 : this.crawling ? 0.05 : 0.085);
+
+    // Gap fall while not airborne enough
+    this.checkGapFail();
+  }
+
+  private resolveBlockers(fromX: number, toX: number): number {
+    let x = toX;
+    for (const room of this.house.rooms) {
+      for (const obs of room.obstacles ?? []) {
+        const left = room.worldX + obs.x;
+
+        if (obs.kind === "vault") {
+          // Solid unless vaulting (handled elsewhere). Block walking into it.
+          if (fromX <= left + 2 && x > left - 4 && this.playerAir < obs.h - 8) {
+            x = Math.min(x, left - 2);
+          }
+        } else if (obs.kind === "crawl") {
+          // Standing cannot pass under; crawling can if head clears.
+          const need = this.headClearance();
+          if (need > obs.clearance - 2) {
+            if (fromX <= left + 2 && x > left - 4) {
+              x = Math.min(x, left - 2);
+            }
+          }
+        } else if (obs.kind === "closingDoor") {
+          const key = `${room.index}:door`;
+          const started = this.doorTimers[key];
+          const local = fromX - room.worldX;
+          if (started == null && local >= obs.triggerX) {
+            this.doorTimers[key] = this.time.now / 1000;
+          }
+          const open = this.doorOpenAmount(room, obs);
+          const gapRight = left + obs.openW * open;
+          // Seal: treat as solid wall when mostly closed.
+          if (open <= 0.12) {
+            if (fromX < left + 8 && x >= left - 2) {
+              // Door slammed — door fail if still approaching or inside frame.
+              this.failRun("door");
+              return fromX;
+            }
+          } else if (fromX < left + 4 && x > left - 2) {
+            // Passage shrinks; block if body won't fit (player width ~36).
+            const passage = gapRight - left;
+            if (passage < 40) {
+              x = Math.min(x, left - 2);
+            }
+          }
+        }
+      }
+    }
+    return x;
+  }
+
+  private doorOpenAmount(
+    room: BakedRoom,
+    obs: Extract<Obstacle, { kind: "closingDoor" }>,
+  ): number {
+    const key = `${room.index}:door`;
+    const started = this.doorTimers[key];
+    if (started == null) return 1;
+    const elapsed = this.time.now / 1000 - started;
+    return Phaser.Math.Clamp(1 - elapsed / obs.closeTime, 0, 1);
+  }
+
+  private checkGapFail(): void {
+    if (this.mode !== "playing") return;
+    for (const room of this.house.rooms) {
+      for (const obs of room.obstacles ?? []) {
+        if (obs.kind !== "gap") continue;
+        const left = room.worldX + obs.x;
+        const right = left + obs.w;
+        if (this.playerX > left + 8 && this.playerX < right - 8 && this.playerAir < 18) {
+          // Fell into the gap — snuffs the flame.
+          this.failRun("flame");
+          return;
+        }
+      }
+    }
+  }
+
+  private updateDoorsAndTimers(dt: number): void {
+    this.timeLeft -= dt;
+    if (this.timeLeft <= 0) {
+      this.timeLeft = 0;
+      this.failRun("time");
+      return;
+    }
+    // Closing door seal while player is in the doorway.
+    for (const room of this.house.rooms) {
+      for (const obs of room.obstacles ?? []) {
+        if (obs.kind !== "closingDoor") continue;
+        const open = this.doorOpenAmount(room, obs);
+        const left = room.worldX + obs.x;
+        const right = left + obs.openW;
+        if (open <= 0.02 && this.playerX >= left - 4 && this.playerX <= right + 10) {
+          this.failRun("door");
+          return;
+        }
+      }
+    }
   }
 
   update(_time: number, delta: number): void {
     const dt = Math.min(0.05, delta / 1000);
     const timeSec = this.time.now / 1000;
-    const held = this.cupped();
+    const held = this.wantsCup();
 
     if (this.mode === "playing") {
       updateGusts(this.house.rooms, this.playerX, timeSec, this.gusts);
-      const wind = sampleWind(this.house.rooms, this.playerX, timeSec, this.gusts);
-      this.flame = Phaser.Math.Clamp(this.flame + flameDelta(held, wind, dt), 0, FLAME_MAX);
-      const speed = WALK_SPEED * (held ? CUP_SPEED_MUL : 1);
-      this.playerX = Math.min(this.house.width - EXIT_MARGIN + 8, this.playerX + speed * dt);
-      this.walkPhase += speed * dt * 0.085;
-      this.leanX += (wind.dx * wind.strength * (held ? 0.32 : 1) - this.leanX) * Math.min(1, dt * 7);
-      this.leanY += (wind.dy * wind.strength * (held ? 0.32 : 1) - this.leanY) * Math.min(1, dt * 7);
-      this.spawnFx(dt, timeSec, wind, held);
-      if (this.flame <= 0) this.failRun();
-      else if (this.playerX >= this.house.width - EXIT_MARGIN) this.winRun();
+      this.moveAndCollide(dt, held);
+      if (this.mode !== "playing") {
+        // fail may have triggered inside collide
+      } else {
+        const wind = sampleWind(
+          this.house.rooms,
+          this.playerX,
+          timeSec,
+          this.gusts,
+          this.chestY(),
+        );
+        this.flame = Phaser.Math.Clamp(
+          this.flame +
+            flameDelta(
+              {
+                cupped: held,
+                sprinting: this.sprinting,
+                crawling: this.crawling,
+                airborne: this.playerAir > 6,
+                vaulting: this.vaulting,
+              },
+              wind,
+              dt,
+            ),
+          0,
+          FLAME_MAX,
+        );
+        const leanMul = held && !this.sprinting && !this.vaulting ? 0.32 : 1;
+        this.leanX += (wind.dx * wind.strength * leanMul - this.leanX) * Math.min(1, dt * 7);
+        this.leanY += (wind.dy * wind.strength * leanMul - this.leanY) * Math.min(1, dt * 7);
+        this.spawnFx(dt, timeSec, wind, held);
+        this.updateDoorsAndTimers(dt);
+        if (this.mode === "playing") {
+          if (this.flame <= 0) this.failRun("flame");
+          else if (this.playerX >= this.house.width - EXIT_MARGIN) this.winRun();
+        }
+      }
     } else if (this.mode === "failing") {
       this.failTimer -= dt;
       this.flame = 0;
@@ -311,14 +766,14 @@ export class PlayScene extends Phaser.Scene {
       this.leanX += (0.08 - this.leanX) * dt * 3;
       this.leanY += (0 - this.leanY) * dt * 3;
       this.spawnFx(dt, timeSec, idle, false);
-      this.promptText.setAlpha(0.45 + Math.sin(timeSec * 2.2) * 0.35);
+      this.promptText.setAlpha(0.82 + Math.sin(timeSec * 2.2) * 0.18);
     } else if (this.mode === "won") {
       this.leanX += (0 - this.leanX) * dt * 3;
       this.leanY += (0 - this.leanY) * dt * 3;
       this.promptText.setAlpha(0.45 + Math.sin(timeSec * 2.2) * 0.35);
     }
 
-    this.follower.setPosition(this.playerX, FLOOR_Y - 90);
+    this.follower.setPosition(this.playerX, FLOOR_Y - 90 - this.playerAir);
     this.drawDynamics(timeSec, held);
     this.drawGlow(held);
     this.drawPerson(timeSec, held);
@@ -328,23 +783,26 @@ export class PlayScene extends Phaser.Scene {
     this.refreshCopy(timeSec);
   }
 
-  private failRun(): void {
+  private failRun(reason: FailReason = "flame"): void {
+    if (this.mode !== "playing") return;
     this.mode = "failing";
+    this.failReason = reason;
     this.failTimer = FAIL_BEAT;
     this.flame = 0;
+    this.vaulting = false;
     this.sdk.gameplayStop();
     for (let i = 0; i < 18; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = 40 + Math.random() * 120;
       this.particles.push({
         x: this.playerX + 18,
-        y: FLOOR_Y - 118,
+        y: FLOOR_Y - 118 - this.playerAir,
         vx: Math.cos(a) * sp,
         vy: Math.sin(a) * sp - 40,
         life: 0.28 + Math.random() * 0.2,
         max: 0.4,
         size: 3 + Math.random() * 5,
-        color: C.flame,
+        color: reason === "time" ? 0xc0b090 : C.flame,
         kind: "puff",
       });
     }
@@ -355,6 +813,7 @@ export class PlayScene extends Phaser.Scene {
     this.sdk.gameplayStop();
     this.roomText.setAlpha(1);
     this.promptText.setText("Press to walk it again").setAlpha(1);
+    this.setTouchVisible(false);
   }
 
   private spawnFx(dt: number, timeSec: number, wind: WindSample, held: boolean): void {
@@ -368,7 +827,7 @@ export class PlayScene extends Phaser.Scene {
           const low = this.flame / FLAME_MAX;
           this.particles.push({
             x: this.playerX + 20 + this.leanX * 10,
-            y: FLOOR_Y - 124 - low * 10,
+            y: FLOOR_Y - 124 - low * 10 - this.playerAir,
             vx: this.leanX * 30 + (Math.random() - 0.5) * 12,
             vy: -20 - Math.random() * 30,
             life: 0.3 + Math.random() * 0.25,
@@ -378,22 +837,23 @@ export class PlayScene extends Phaser.Scene {
             kind: "ember",
           });
         }
-      }
-    }
-    if (wind.strength > 0.2 && this.mode === "playing") {
-      const n = wind.strength > 0.7 ? 2 : 1;
-      for (let i = 0; i < n; i++) {
-        this.particles.push({
-          x: this.playerX - wind.dx * 80 + (Math.random() - 0.5) * 40,
-          y: FLOOR_Y - 70 - Math.random() * 200,
-          vx: wind.dx * (180 + wind.strength * 220),
-          vy: wind.dy * (160 + wind.strength * 140) + (Math.random() - 0.5) * 20,
-          life: 0.35 + Math.random() * 0.3,
-          max: 0.6,
-          size: 2 + Math.random() * 8,
-          color: 0xc4b49a,
-          kind: "streak",
-        });
+        if (wind.rain > 0.2 && Math.random() < 0.5) {
+          const room = roomAt(this.house.rooms, this.playerX);
+          for (const hazard of room.hazards) {
+            if (hazard.kind !== "rain") continue;
+            this.particles.push({
+              x: room.worldX + hazard.x + Math.random() * hazard.w,
+              y: 120 + Math.random() * 40,
+              vx: 10 + Math.random() * 20,
+              vy: 220 + Math.random() * 160,
+              life: 0.9,
+              max: 0.9,
+              size: 2,
+              color: 0x8ab0c0,
+              kind: "drip",
+            });
+          }
+        }
       }
     }
   }
@@ -403,28 +863,14 @@ export class PlayScene extends Phaser.Scene {
     for (const room of this.house.rooms) {
       if (room.worldX + room.width < cam.x - 40 || room.worldX > cam.right + 40) continue;
       for (const hazard of room.hazards) {
-        if (hazard.kind === "rain") {
+        if (hazard.kind === "draft" || hazard.kind === "chimney") {
+          if (Math.random() > 0.55) continue;
           const x = room.worldX + hazard.x + Math.random() * hazard.w;
           this.particles.push({
             x,
-            y: CEILING_Y + 8,
-            vx: 18,
-            vy: 280 + Math.random() * 120,
-            life: 0.9,
-            max: 0.9,
-            size: 2,
-            color: 0x9eb8c8,
-            kind: "drip",
-          });
-        } else if (hazard.kind === "draft" || hazard.kind === "chimney" || hazard.kind === "vent") {
-          if (Math.random() > 0.5) continue;
-          const x = room.worldX + hazard.x + Math.random() * hazard.w;
-          const dir = hazard.kind === "vent" ? { x: 0, y: -1 } : hazard.kind === "draft" ? hazard.dir : hazard.dir;
-          this.particles.push({
-            x,
-            y: hazard.kind === "vent" ? FLOOR_Y - 40 - Math.random() * 200 : FLOOR_Y - 40 - Math.random() * 280,
-            vx: dir.x * (70 + Math.random() * 90),
-            vy: dir.y * (70 + Math.random() * 90),
+            y: FLOOR_Y - 40 - Math.random() * 220,
+            vx: hazard.dir.x * (40 + Math.random() * 60),
+            vy: hazard.dir.y * (30 + Math.random() * 40),
             life: 0.7,
             max: 0.7,
             size: 2 + Math.random() * 3,
@@ -470,13 +916,13 @@ export class PlayScene extends Phaser.Scene {
     if (Math.random() < dt * 8) {
       this.particles.push({
         x: this.playerX + 16 + (Math.random() - 0.5) * 20,
-        y: FLOOR_Y - 110,
+        y: FLOOR_Y - 110 - this.playerAir,
         vx: (Math.random() - 0.5) * 30,
-        vy: -10 - Math.random() * 20,
+        vy: -10 - Math.random() * 40,
         life: 0.4,
         max: 0.4,
-        size: 6 + Math.random() * 8,
-        color: 0x665544,
+        size: 4 + Math.random() * 6,
+        color: 0x6a6058,
         kind: "puff",
       });
     }
@@ -492,7 +938,12 @@ export class PlayScene extends Phaser.Scene {
     }
   }
 
-  private drawRoomDynamics(g: Phaser.GameObjects.Graphics, room: BakedRoom, timeSec: number, _held: boolean): void {
+  private drawRoomDynamics(
+    g: Phaser.GameObjects.Graphics,
+    room: BakedRoom,
+    timeSec: number,
+    _held: boolean,
+  ): void {
     const x = room.worldX;
     if (room.kind === "foyer") {
       this.drawCurtain(g, x + 548, 162, 70, 250, timeSec, 0.35, 0.6);
@@ -520,7 +971,8 @@ export class PlayScene extends Phaser.Scene {
       if (hazard.kind === "fan") this.drawFan(g, x + hazard.x, timeSec, hazard);
     }
     if (room.kind === "curtains") {
-      const pulse = room.hazards[0]?.kind === "periodic" ? periodicActive(room.hazards[0], timeSec) : 0.4;
+      const pulse =
+        room.hazards[0]?.kind === "periodic" ? periodicActive(room.hazards[0], timeSec) : 0.4;
       for (const [wx, phase] of [
         [144, 0],
         [484, 0.6],
@@ -531,11 +983,32 @@ export class PlayScene extends Phaser.Scene {
       }
     }
     if (room.kind === "kitchen") {
+      for (const obs of room.obstacles ?? []) {
+        if (obs.kind !== "closingDoor") continue;
+        const open = this.doorOpenAmount(room, obs);
+        const close = 1 - open;
+        // Sliding leaf from the right jamb.
+        const leafW = obs.openW * close;
+        const hinge = x + obs.x + obs.openW;
+        g.fillStyle(C.woodMid, 1);
+        g.fillRect(hinge - leafW, 192, leafW, FLOOR_Y - 192);
+        g.fillStyle(C.woodDark, 1);
+        g.fillRect(hinge - leafW, 192, 6, FLOOR_Y - 192);
+        g.fillStyle(C.trim, 1);
+        g.fillCircle(hinge - leafW + 14, 400, 4);
+        if (close > 0.15) {
+          g.fillStyle(0xc45a2a, 0.15 + close * 0.25);
+          g.fillRect(x + obs.x - 6, 180, obs.openW + 12, 8);
+        }
+      }
       const hazard = room.hazards[0];
-      if (hazard.kind === "approachGust") {
+      if (hazard?.kind === "approachGust") {
         const env = gustEnvelope(hazard, this.gusts[hazard.id]?.openedAt ?? null, timeSec);
-        const swing = env.open > 0 ? Math.sin(Math.min(1, env.open + (1 - env.wind) * 0.2) * Math.PI) : 0;
-        this.drawSwingingDoor(g, x + 426, 202, 80, FLOOR_Y - 202, swing, -1);
+        // Soft curtain stir near the counters — door slam is the closingDoor leaf above.
+        if (env.wind > 0.1) {
+          g.fillStyle(0xd0c0a8, 0.08 * env.wind);
+          g.fillEllipse(x + hazard.gustX + 40, 320, 80, 120);
+        }
       }
     }
     if (room.kind === "landing") {
@@ -621,7 +1094,6 @@ export class PlayScene extends Phaser.Scene {
   ): void {
     const heading = fanAngle(hazard, timeSec);
     const fy = FLOOR_Y - 78;
-    // wind cone
     const reach = hazard.reach;
     const a0 = heading - hazard.cone;
     const a1 = heading + hazard.cone;
@@ -647,7 +1119,6 @@ export class PlayScene extends Phaser.Scene {
     g.moveTo(fx, fy);
     g.lineTo(fx + Math.cos(a1) * reach, fy + Math.sin(a1) * reach);
     g.strokePath();
-    // blades
     const spin = timeSec * 14;
     g.fillStyle(C.metalLite, 0.9);
     for (let i = 0; i < 3; i++) {
@@ -663,7 +1134,14 @@ export class PlayScene extends Phaser.Scene {
     g.fillCircle(fx, fy, 8);
   }
 
-  private drawStormGlass(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, timeSec: number): void {
+  private drawStormGlass(
+    g: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    timeSec: number,
+  ): void {
     g.fillStyle(0x9eb0c0, 0.18);
     for (let i = 0; i < 16; i++) {
       const px = x + ((i * 47 + timeSec * 80) % w);
@@ -675,26 +1153,80 @@ export class PlayScene extends Phaser.Scene {
   private drawPerson(timeSec: number, held: boolean): void {
     const g = this.playerGfx;
     g.clear();
-    const walking = this.mode === "playing";
+    const walking = this.mode === "playing" && !this.vaulting;
+    const sprint = this.sprinting && walking;
+    const crawl = this.crawling && this.mode === "playing";
+    const air = this.playerAir > 6 || this.vaulting;
     const step = walking ? Math.sin(this.walkPhase) : 0;
-    const bob = walking ? Math.cos(this.walkPhase * 2) * (held ? 1.2 : 2.2) : Math.sin(timeSec * 2) * 0.6;
+    const bob = walking
+      ? Math.cos(this.walkPhase * 2) * (held ? 1.2 : sprint ? 3.2 : 2.2)
+      : Math.sin(timeSec * 2) * 0.6;
     const x = this.playerX;
-    const feet = FLOOR_Y + bob;
-    const cup = held && this.mode === "playing";
+    const feet = FLOOR_Y + bob - this.playerAir;
+    const cup = held && this.mode === "playing" && !this.vaulting;
 
     g.fillStyle(0x000000, 0.28);
-    g.fillEllipse(x + 4, FLOOR_Y + 6, 50, 12);
+    g.fillEllipse(x + 4, FLOOR_Y + 6, crawl ? 58 : 50, crawl ? 10 : 12);
 
-    const legSpan = walking ? step * (cup ? 9 : 16) : 0;
+    if (this.vaulting) {
+      // Hands leave the flame; body leans over the sofa.
+      const lean = 18;
+      g.fillStyle(C.pants, 1);
+      g.fillRoundedRect(x - 20, feet - 36, 40, 16, 6);
+      g.fillRoundedRect(x - 28, feet - 28, 18, 22, 5);
+      g.fillRoundedRect(x + 10, feet - 28, 18, 22, 5);
+      g.fillStyle(C.coat, 1);
+      g.fillRoundedRect(x - 22 + lean * 0.2, feet - 70, 48, 40, 10);
+      g.fillStyle(C.skin, 1);
+      g.fillCircle(x + 18, feet - 82, 14);
+      g.fillStyle(C.hair, 1);
+      g.fillEllipse(x + 16, feet - 90, 26, 16);
+      // Arms out, not cupping
+      g.fillStyle(C.coatLite, 1);
+      g.fillRoundedRect(x - 34, feet - 64, 22, 10, 4);
+      g.fillRoundedRect(x + 28, feet - 60, 22, 10, 4);
+      this.drawFlame(g, x + 10 + this.leanX * 10, feet - 58 + this.leanY * 8, false, timeSec);
+      return;
+    }
+
+    if (crawl) {
+      const legSpan = walking ? step * 10 : 0;
+      g.fillStyle(C.pants, 1);
+      g.fillRoundedRect(x - 22 + legSpan, feet - 28, 28, 14, 5);
+      g.fillRoundedRect(x + 2 - legSpan, feet - 22, 26, 14, 5);
+      g.fillStyle(0x12100e, 1);
+      g.fillRoundedRect(x - 24 + legSpan, feet - 12, 18, 10, 3);
+      g.fillRoundedRect(x + 8 - legSpan, feet - 10, 18, 10, 3);
+      g.fillStyle(C.coat, 1);
+      g.fillRoundedRect(x - 20, feet - 52, 44, 28, 8);
+      const headY = feet - 58;
+      g.fillStyle(C.skin, 1);
+      g.fillCircle(x + 16, headY, 13);
+      g.fillStyle(C.hair, 1);
+      g.fillEllipse(x + 14, headY - 6, 24, 14);
+      const flameX = x + 28 + this.leanX * 8;
+      const flameY = feet - 44 + this.leanY * 8;
+      if (cup) {
+        g.fillStyle(C.coatLite, 1);
+        g.fillRoundedRect(x + 8, flameY - 2, 16, 16, 6);
+        g.fillRoundedRect(x + 26, flameY - 2, 16, 16, 6);
+      }
+      this.drawFlame(g, flameX, flameY, cup, timeSec);
+      return;
+    }
+
+    const stride = sprint ? 22 : cup ? 9 : 16;
+    const legSpan = walking ? step * stride : air ? 8 : 0;
+    const legH = air ? 48 : 62;
     g.fillStyle(C.pants, 1);
-    g.fillRoundedRect(x - 14 + legSpan, feet - 62, 13, 62, 5);
-    g.fillRoundedRect(x + 2 - legSpan, feet - 62, 13, 62, 5);
+    g.fillRoundedRect(x - 14 + legSpan, feet - legH, 13, legH, 5);
+    g.fillRoundedRect(x + 2 - legSpan, feet - legH, 13, legH, 5);
     g.fillStyle(0x12100e, 1);
     g.fillRoundedRect(x - 16 + legSpan, feet - 12, 16, 12, 3);
     g.fillRoundedRect(x + 2 - legSpan, feet - 12, 16, 12, 3);
 
-    const torsoH = cup ? 58 : 64;
-    const torsoY = feet - 62 - torsoH;
+    const torsoH = cup ? 58 : sprint ? 60 : 64;
+    const torsoY = feet - legH - (air ? 4 : 0) - torsoH + (air ? 10 : 0);
     g.fillStyle(C.coat, 1);
     g.fillRoundedRect(x - 18, torsoY, 38, torsoH + 8, 10);
     g.fillStyle(C.coatLite, 0.5);
@@ -727,7 +1259,13 @@ export class PlayScene extends Phaser.Scene {
     this.drawFlame(g, flameX, flameY, cup, timeSec);
   }
 
-  private drawFlame(g: Phaser.GameObjects.Graphics, x: number, y: number, cupped: boolean, timeSec: number): void {
+  private drawFlame(
+    g: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    cupped: boolean,
+    timeSec: number,
+  ): void {
     const live = this.mode !== "failing" && this.flame > 0;
     g.fillStyle(0xd8c8a8, 1);
     g.fillRect(x - 3, y + 10, 6, 22);
@@ -739,7 +1277,7 @@ export class PlayScene extends Phaser.Scene {
       return;
     }
     const t = this.flame / FLAME_MAX;
-    const amp = (1.1 - t) * 1.4 + (Math.hypot(this.leanX, this.leanY) * 0.8);
+    const amp = 1.1 - t * 1.4 + Math.hypot(this.leanX, this.leanY) * 0.8;
     const flick = flicker(timeSec * (cupped ? 0.7 : 1.2), 1) * amp * (cupped ? 0.4 : 1);
     const lean = this.leanX * 16 * (cupped ? 0.35 : 1);
     const up = this.leanY * 10;
@@ -772,7 +1310,7 @@ export class PlayScene extends Phaser.Scene {
     if (this.flame <= 0) return;
     const t = this.flame / FLAME_MAX;
     const x = this.playerX + 22 + this.leanX * 10;
-    const y = FLOOR_Y - 118 + this.leanY * 12;
+    const y = FLOOR_Y - 118 + this.leanY * 12 - this.playerAir;
     const scale = (held ? 0.78 : 1) * (0.4 + t * 0.7);
     const rings: Array<[number, number, number]> = [
       [220 * scale, C.flameDeep, 0.05],
@@ -862,17 +1400,41 @@ export class PlayScene extends Phaser.Scene {
     }
   }
 
+  private formatTime(sec: number): string {
+    const s = Math.max(0, Math.ceil(sec));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${r.toString().padStart(2, "0")}`;
+  }
+
   private refreshCopy(timeSec: number): void {
     if (this.mode === "title") {
       this.titleText.setAlpha(1);
       this.taglineText.setAlpha(1);
+      this.hintText.setAlpha(0.55);
+      this.timerText.setAlpha(0);
       return;
     }
     const room = roomAt(this.house.rooms, this.playerX);
     this.roomText.setText(room.name);
     this.attemptText.setText(this.attempts > 1 ? `Attempt ${this.attempts}` : "");
+    if (this.mode === "playing" || this.mode === "failing") {
+      const urgent = this.timeLeft <= 15;
+      this.timerText
+        .setText(this.formatTime(this.timeLeft))
+        .setColor(urgent ? "#ff8a5a" : C.textDim)
+        .setAlpha(1);
+    } else {
+      this.timerText.setAlpha(0);
+    }
     if (this.mode === "failing") {
-      this.bannerText.setText("The flame went out.").setAlpha(1);
+      const msg =
+        this.failReason === "time"
+          ? "Time's up."
+          : this.failReason === "door"
+            ? "The door closed."
+            : "The flame went out.";
+      this.bannerText.setText(msg).setAlpha(1);
       this.bannerSub.setText("").setAlpha(0);
     } else if (this.mode === "won") {
       this.bannerText.setText("The house is still lit.").setAlpha(1);

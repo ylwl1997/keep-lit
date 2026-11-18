@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { C, CEILING_Y, FLOOR_Y, GAME_H, WAINSCOT_Y } from "./constants";
-import type { BakedRoom, RoomKind } from "./rooms";
+import type { BakedRoom, Obstacle, RoomKind } from "./rooms";
 
 type G = Phaser.GameObjects.Graphics;
 
@@ -223,12 +223,12 @@ function furnitureFrontDoor(g: G, r: BakedRoom): void {
 function furnitureFan(g: G, r: BakedRoom): void {
   const x = r.worldX;
   drawWindow(g, x + 80, 180, 140, 210);
-  // sofa
+  // wall sofa (decorative, off the walking line)
   g.fillStyle(0x3a2a28, 1);
-  g.fillRoundedRect(x + 200, FLOOR_Y - 90, 240, 90, 12);
+  g.fillRoundedRect(x + 120, FLOOR_Y - 90, 180, 90, 12);
   g.fillStyle(0x2e2220, 1);
-  g.fillRoundedRect(x + 210, FLOOR_Y - 124, 80, 46, 10);
-  g.fillRoundedRect(x + 350, FLOOR_Y - 124, 80, 46, 10);
+  g.fillRoundedRect(x + 130, FLOOR_Y - 124, 70, 46, 10);
+  g.fillRoundedRect(x + 220, FLOOR_Y - 124, 70, 46, 10);
   // side table
   drawTable(g, x + 820, FLOOR_Y - 70, 90, 70, 12);
   g.fillStyle(0x4a4030, 1);
@@ -284,14 +284,7 @@ function furnitureKitchen(g: G, r: BakedRoom): void {
   g.fillRect(x + 700, FLOOR_Y - 108, 44, 18);
   g.fillStyle(0x2a3030, 1);
   g.fillCircle(x + 800, FLOOR_Y - 102, 14);
-  // door frame mid-room (door leaf is dynamic)
-  const dx = x + 420;
-  g.fillStyle(C.wood, 1);
-  g.fillRect(dx - 10, 200, 16, FLOOR_Y - 200);
-  g.fillRect(dx + 86, 200, 16, FLOOR_Y - 200);
-  g.fillRect(dx - 10, 186, 112, 16);
-  g.fillStyle(0x120e0c, 1);
-  g.fillRect(dx + 6, 202, 80, FLOOR_Y - 202);
+  // Mid-room closing door frame is drawn via obstacles (closingDoor).
 }
 
 function furnitureLeaky(g: G, r: BakedRoom): void {
@@ -303,14 +296,13 @@ function furnitureLeaky(g: G, r: BakedRoom): void {
   g.fillEllipse(x + 680, CEILING_Y + 18, 140, 30);
   g.fillStyle(0x243028, 0.35);
   g.fillEllipse(x + 430, CEILING_Y + 28, 80, 16);
-  // puddles
-  g.fillStyle(0x1a2830, 0.55);
-  g.fillEllipse(x + 430, FLOOR_Y + 16, 120, 18);
+  // side puddles (main gap is drawn as an obstacle)
+  g.fillStyle(0x1a2830, 0.45);
   g.fillEllipse(x + 700, FLOOR_Y + 14, 90, 14);
-  g.fillStyle(0x8ab0c0, 0.12);
-  g.fillEllipse(x + 420, FLOOR_Y + 14, 70, 8);
+  g.fillStyle(0x8ab0c0, 0.1);
+  g.fillEllipse(x + 700, FLOOR_Y + 12, 50, 6);
   // buckets
-  for (const bx of [400, 660]) {
+  for (const bx of [360, 660]) {
     g.fillStyle(C.metal, 1);
     g.fillRect(x + bx, FLOOR_Y - 36, 36, 36);
     g.fillStyle(C.metalLite, 1);
@@ -464,6 +456,99 @@ function furnitureLanding(g: G, r: BakedRoom): void {
   g.fillRect(x + 760, 158, 180, 8);
 }
 
+
+function drawVaultSofa(g: G, worldX: number, obs: Extract<Obstacle, { kind: "vault" }>): void {
+  const x = worldX + obs.x;
+  const h = obs.h;
+  const w = obs.w;
+  g.fillStyle(0x3a2a28, 1);
+  g.fillRoundedRect(x, FLOOR_Y - h, w, h, 10);
+  g.fillStyle(0x2e2220, 1);
+  g.fillRoundedRect(x + 8, FLOOR_Y - h - 28, w * 0.34, 32, 8);
+  g.fillRoundedRect(x + w * 0.58, FLOOR_Y - h - 28, w * 0.34, 32, 8);
+  g.fillStyle(0x241818, 0.9);
+  g.fillRect(x + 4, FLOOR_Y - 14, w - 8, 14);
+  // subtle highlight so it reads as a blocker
+  g.fillStyle(0xc8b090, 0.08);
+  g.fillRoundedRect(x + 10, FLOOR_Y - h + 8, w - 20, 18, 6);
+}
+
+function drawCrawlBeam(g: G, worldX: number, obs: Extract<Obstacle, { kind: "crawl" }>): void {
+  const x = worldX + obs.x;
+  const clear = obs.clearance;
+  const w = obs.w;
+  // Heavy beam / half-closed shutter hanging low
+  g.fillStyle(C.woodDeep, 1);
+  g.fillRect(x - 10, CEILING_Y, w + 20, 18);
+  g.fillStyle(C.wood, 1);
+  g.fillRect(x, CEILING_Y + 14, w, FLOOR_Y - clear - (CEILING_Y + 14));
+  g.fillStyle(C.woodDark, 1);
+  g.fillRect(x, FLOOR_Y - clear - 14, w, 14);
+  g.fillStyle(C.trim, 0.85);
+  g.fillRect(x + 8, CEILING_Y + 28, 8, FLOOR_Y - clear - CEILING_Y - 50);
+  g.fillRect(x + w - 16, CEILING_Y + 28, 8, FLOOR_Y - clear - CEILING_Y - 50);
+  // open crawl mouth
+  g.fillStyle(0x080604, 0.55);
+  g.fillRect(x + 6, FLOOR_Y - clear, w - 12, clear);
+  g.fillStyle(0xc8b090, 0.07);
+  g.fillRect(x + 10, FLOOR_Y - clear + 4, w - 20, 10);
+}
+
+function drawFloorGap(g: G, worldX: number, obs: Extract<Obstacle, { kind: "gap" }>): void {
+  const x = worldX + obs.x;
+  const w = obs.w;
+  // Dark pit / broken boards
+  g.fillStyle(0x060504, 1);
+  g.fillRect(x, FLOOR_Y - 2, w, GAME_H - FLOOR_Y + 2);
+  g.fillGradientStyle(0x0c1014, 0x0c1014, 0x1a2830, 0x1a2830, 1, 1, 0.7, 0.7);
+  g.fillRect(x + 4, FLOOR_Y + 8, w - 8, 40);
+  // jagged board edges
+  g.fillStyle(C.woodDark, 1);
+  g.fillRect(x - 10, FLOOR_Y - 8, 14, 12);
+  g.fillRect(x + w - 4, FLOOR_Y - 8, 14, 12);
+  g.fillStyle(C.woodMid, 1);
+  g.fillTriangle(x - 4, FLOOR_Y - 8, x + 18, FLOOR_Y - 8, x - 4, FLOOR_Y + 6);
+  g.fillTriangle(x + w + 4, FLOOR_Y - 8, x + w - 18, FLOOR_Y - 8, x + w + 4, FLOOR_Y + 6);
+  g.fillStyle(0x8ab0c0, 0.12);
+  g.fillEllipse(x + w * 0.5, FLOOR_Y + 28, w * 0.7, 12);
+}
+
+function drawClosingDoorFrame(g: G, worldX: number, obs: Extract<Obstacle, { kind: "closingDoor" }>): void {
+  const x = worldX + obs.x;
+  const openW = obs.openW;
+  g.fillStyle(C.wood, 1);
+  g.fillRect(x - 12, 190, 14, FLOOR_Y - 190);
+  g.fillRect(x + openW - 2, 190, 14, FLOOR_Y - 190);
+  g.fillRect(x - 12, 176, openW + 24, 16);
+  g.fillStyle(0x100c0a, 1);
+  g.fillRect(x + 2, 192, openW - 4, FLOOR_Y - 192);
+  // urgency stripe
+  g.fillStyle(0xc45a2a, 0.25);
+  g.fillRect(x - 4, 186, openW + 8, 6);
+}
+
+function drawObstacles(g: G, room: BakedRoom): void {
+  const list = room.obstacles ?? [];
+  for (const obs of list) {
+    switch (obs.kind) {
+      case "vault":
+        drawVaultSofa(g, room.worldX, obs);
+        break;
+      case "crawl":
+        drawCrawlBeam(g, room.worldX, obs);
+        break;
+      case "gap":
+        drawFloorGap(g, room.worldX, obs);
+        break;
+      case "closingDoor":
+        drawClosingDoorFrame(g, room.worldX, obs);
+        break;
+      default:
+        break;
+    }
+  }
+}
+
 function drawFurniture(g: G, room: BakedRoom): void {
   switch (room.kind) {
     case "foyer":
@@ -511,6 +596,7 @@ export function drawStaticHouse(g: G, rooms: BakedRoom[]): void {
   g.clear();
   for (const room of rooms) drawShell(g, room);
   for (const room of rooms) drawFurniture(g, room);
+  for (const room of rooms) drawObstacles(g, room);
   for (let i = 0; i < rooms.length; i++) {
     drawDoorway(g, rooms[i], i === rooms.length - 1);
   }

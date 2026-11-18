@@ -10,6 +10,14 @@ export type WindSample = {
 
 export type GustState = Record<string, { openedAt: number | null }>;
 
+export type FlameContext = {
+  cupped: boolean;
+  sprinting: boolean;
+  crawling: boolean;
+  airborne: boolean;
+  vaulting: boolean;
+};
+
 function inSpan(localX: number, x: number, w: number): number {
   if (localX < x || localX > x + w) return 0;
   const edge = Math.min(40, w * 0.18);
@@ -85,14 +93,18 @@ export function updateGusts(
   }
 }
 
+/**
+ * Sample wind at the player's chest height so crawl slips under mid streams
+ * and a hop can rise into a higher one.
+ */
 export function sampleWind(
   rooms: BakedRoom[],
   playerX: number,
   timeSec: number,
   state: GustState,
+  chestY: number = FLOOR_Y - 96,
 ): WindSample {
   const acc = { sx: 0, sy: 0, max: 0, sum: 0, rain: 0 };
-  const chestY = FLOOR_Y - 96;
 
   for (const room of rooms) {
     const local = playerX - room.worldX;
@@ -119,12 +131,16 @@ export function sampleWind(
         }
         case "rain": {
           const cover = inSpan(local, hazard.x, hazard.w);
-          addWind(acc, hazard.strength * cover, { x: 0.15, y: 1 }, cover);
+          // Rain hits less when crouched under furniture clearance.
+          const heightMul = chestY > FLOOR_Y - 70 ? 1 : 0.35;
+          addWind(acc, hazard.strength * cover * heightMul, { x: 0.15, y: 1 }, cover * heightMul);
           break;
         }
         case "vent": {
           const cover = inSpan(local, hazard.x, hazard.w);
-          addWind(acc, hazard.strength * cover, { x: 0, y: -1 });
+          // Ceiling vent is strongest at standing chest; crawl sits lower in the pull.
+          const heightMul = PhaserMathClamp((FLOOR_Y - 40 - chestY) / 80, 0.35, 1.15);
+          addWind(acc, hazard.strength * cover * heightMul, { x: 0, y: -1 });
           break;
         }
         case "fan": {
@@ -167,13 +183,40 @@ export function sampleWind(
   return { strength, dx, dy, rain: acc.rain };
 }
 
-export function flameDelta(cupped: boolean, wind: WindSample, dt: number): number {
+function PhaserMathClamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
+}
+
+/**
+ * Cup protects, but verbs trade off:
+ * - crawl: much stabler (wind drain ×0.38)
+ * - sprint while cupping: leaky cup (×1.55) + small jostle
+ * - airborne: wind hits harder even if cupped (×1.45)
+ * - vault: almost no cup (exposed)
+ */
+export function flameDelta(ctx: FlameContext, wind: WindSample, dt: number): number {
   const s = wind.strength;
   if (s <= CALM_THRESHOLD) {
-    if (cupped) return 0;
+    if (ctx.cupped || ctx.vaulting) return 0;
     const ease = 1 - (s / CALM_THRESHOLD) * 0.45;
-    return RECOVER_RATE * ease * dt;
+    const crawlBonus = ctx.crawling ? 1.15 : 1;
+    return RECOVER_RATE * ease * crawlBonus * dt;
   }
-  if (cupped) return -(2.2 + 10 * s) * dt;
-  return -(50 * s) * dt;
+
+  let mul = 1;
+  if (ctx.crawling) mul *= 0.38;
+  if (ctx.airborne) mul *= 1.45;
+  if (ctx.vaulting) mul *= 1.7;
+  if (ctx.sprinting) mul *= ctx.cupped ? 1.55 : 1.2;
+
+  if (ctx.vaulting) {
+    // Hands leave the flame — treat as nearly uncapped.
+    return -(42 * s * mul) * dt;
+  }
+  if (ctx.cupped) {
+    const leak = ctx.sprinting ? 1.35 : 1;
+    const jostle = ctx.sprinting ? 4.5 * dt : 0;
+    return -(2.2 + 10 * s * leak) * mul * dt - jostle;
+  }
+  return -(50 * s) * mul * dt;
 }

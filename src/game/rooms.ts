@@ -60,6 +60,40 @@ export type Hazard =
       dir: Vec2;
     };
 
+/** Physical blockers / timed gates that force jump, vault, crawl, or sprint. */
+export type Obstacle =
+  | {
+      kind: "vault";
+      /** Local left edge of the blocker. */
+      x: number;
+      w: number;
+      /** Height above floor; waist-high furniture. */
+      h: number;
+    }
+  | {
+      kind: "crawl";
+      x: number;
+      w: number;
+      /** Max standing clearance from floor; must duck under. */
+      clearance: number;
+    }
+  | {
+      kind: "gap";
+      x: number;
+      w: number;
+    }
+  | {
+      kind: "closingDoor";
+      /** Door frame local x (left of gap). */
+      x: number;
+      /** Passage width when fully open. */
+      openW: number;
+      /** Local x where the close clock starts. */
+      triggerX: number;
+      /** Seconds from trigger until the door seals. */
+      closeTime: number;
+    };
+
 export type RoomKind =
   | "foyer"
   | "hall"
@@ -79,6 +113,7 @@ export type RoomDef = {
   width: number;
   kind: RoomKind;
   hazards: Hazard[];
+  obstacles?: Obstacle[];
 };
 
 export type BakedRoom = RoomDef & { worldX: number; index: number };
@@ -136,6 +171,8 @@ export const ROOM_DEFS: RoomDef[] = [
         sweep: 1.12,
       },
     ],
+    // Mid-path sofa: must vault; fan exposure during vault is the tradeoff.
+    obstacles: [{ kind: "vault", x: 430, w: 120, h: 82 }],
   },
   {
     name: "Curtain Corridor",
@@ -153,24 +190,36 @@ export const ROOM_DEFS: RoomDef[] = [
         phase: 0.1,
       },
     ],
+    // Low beam / half-dropped shutter: standing blocked, crawl clears.
+    obstacles: [{ kind: "crawl", x: 520, w: 200, clearance: 78 }],
   },
   {
     name: "Kitchen Door",
-    width: 960,
+    width: 1040,
     kind: "kitchen",
     hazards: [
       {
         kind: "approachGust",
         id: "kitchen-door",
-        triggerX: 300,
-        triggerRange: 260,
-        gustX: 320,
-        gustW: 280,
-        strength: 0.85,
+        triggerX: 260,
+        triggerRange: 240,
+        gustX: 300,
+        gustW: 260,
+        strength: 0.72,
         dir: LEFT,
-        openTime: 0.32,
-        burstTime: 0.7,
+        openTime: 0.28,
+        burstTime: 0.55,
         linger: 0.05,
+      },
+    ],
+    // Closing pantry door: walk-speed cannot clear once the clock starts.
+    obstacles: [
+      {
+        kind: "closingDoor",
+        x: 520,
+        openW: 96,
+        triggerX: 90,
+        closeTime: 2.45,
       },
     ],
   },
@@ -179,6 +228,8 @@ export const ROOM_DEFS: RoomDef[] = [
     width: 1140,
     kind: "leaky",
     hazards: [{ kind: "rain", x: 260, w: 640, strength: 0.62 }],
+    // Broken boards / wide puddle gap — must jump.
+    obstacles: [{ kind: "gap", x: 470, w: 78 }],
   },
   {
     name: "Cross Breeze",
@@ -195,6 +246,8 @@ export const ROOM_DEFS: RoomDef[] = [
     width: 1000,
     kind: "attic",
     hazards: [{ kind: "vent", x: 360, w: 300, strength: 0.7 }],
+    // Low soffit / stacked crates arch — reinforce crawl under drafts.
+    obstacles: [{ kind: "crawl", x: 400, w: 160, clearance: 82 }],
   },
   {
     name: "Stairwell",
@@ -204,6 +257,8 @@ export const ROOM_DEFS: RoomDef[] = [
       { kind: "chimney", x: 60, w: 500, strength: 0.7, dir: CHIMNEY_DIR },
       { kind: "chimney", x: 800, w: 620, strength: 0.76, dir: CHIMNEY_DIR },
     ],
+    // Missing floorboards on the walk — second jump.
+    obstacles: [{ kind: "gap", x: 700, w: 74 }],
   },
   {
     name: "Storm Window",
